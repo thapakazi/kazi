@@ -61,7 +61,20 @@ func stackPath(name string) string {
 	return filepath.Join(Root(), "stacks", name+".yaml")
 }
 
+// validName rejects empty names and names that could escape the stacks
+// directory via path traversal.
+func validName(name string) error {
+	if name == "" || name == "." || name == ".." ||
+		strings.ContainsAny(name, `/\`) {
+		return fmt.Errorf("invalid stack name %q", name)
+	}
+	return nil
+}
+
 func SaveStack(m Manifest) error {
+	if err := validName(m.Metadata.Name); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Join(Root(), "stacks"), 0o755); err != nil {
 		return err
 	}
@@ -73,6 +86,9 @@ func SaveStack(m Manifest) error {
 }
 
 func LoadStack(name string) (Manifest, error) {
+	if err := validName(name); err != nil {
+		return Manifest{}, err
+	}
 	b, err := os.ReadFile(stackPath(name))
 	if errors.Is(err, os.ErrNotExist) {
 		return Manifest{}, fmt.Errorf("%w: %s", ErrNotFound, name)
@@ -110,6 +126,9 @@ func ListStacks() ([]Manifest, error) {
 }
 
 func DeleteStack(name string) error {
+	if err := validName(name); err != nil {
+		return err
+	}
 	err := os.Remove(stackPath(name))
 	if errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("%w: %s", ErrNotFound, name)

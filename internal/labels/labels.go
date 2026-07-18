@@ -39,7 +39,7 @@ func OverrideYAML(stack string, services []string) []byte {
 	var b strings.Builder
 	b.WriteString("services:\n")
 	for _, s := range services {
-		fmt.Fprintf(&b, "  %s:\n    labels:\n      %s: \"true\"\n      %s: %q\n", s, Managed, Stack, stack)
+		fmt.Fprintf(&b, "  %q:\n    labels:\n      %s: \"true\"\n      %s: %q\n", s, Managed, Stack, stack)
 	}
 	return []byte(b.String())
 }

@@ -86,3 +86,19 @@ func TestLoadConfigFromFile(t *testing.T) {
 		t.Errorf("runtime = %q err %v, want podman", cfg.Spec.Runtime, err)
 	}
 }
+
+func TestInvalidStackNames(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	for _, bad := range []string{"", "..", "a/b", `a\b`} {
+		m := testManifest(bad, "/x/compose.yml")
+		if err := SaveStack(m); err == nil {
+			t.Errorf("SaveStack(%q) should fail", bad)
+		}
+		if _, err := LoadStack(bad); err == nil || errors.Is(err, ErrNotFound) {
+			t.Errorf("LoadStack(%q) = %v, want validation error", bad, err)
+		}
+		if err := DeleteStack(bad); err == nil || errors.Is(err, ErrNotFound) {
+			t.Errorf("DeleteStack(%q) = %v, want validation error", bad, err)
+		}
+	}
+}
