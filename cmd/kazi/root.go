@@ -11,6 +11,7 @@ import (
 	"github.com/thapakazi/kazi/internal/engine"
 	"github.com/thapakazi/kazi/internal/runtime"
 	"github.com/thapakazi/kazi/internal/store"
+	"github.com/thapakazi/kazi/internal/template"
 )
 
 const apiVersion = "kazi.dev/v1alpha1"
@@ -101,6 +102,8 @@ func errCode(err error) string {
 		return "stack_not_found"
 	case errors.Is(err, runtime.ErrNoRuntime):
 		return "no_runtime"
+	case errors.Is(err, template.ErrAborted):
+		return "aborted"
 	default:
 		return "runtime_failure"
 	}

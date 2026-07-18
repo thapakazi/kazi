@@ -2,9 +2,12 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/thapakazi/kazi/internal/template"
 )
 
 // TestM2BCmdRegistration verifies that run, adopt, eject, and template (with
@@ -199,5 +202,31 @@ func TestM2BTemplateImportArgs(t *testing.T) {
 	}
 	if err := templateImportCmd.Args(templateImportCmd, []string{"a", "b", "c"}); !errors.Is(err, ErrUsage) {
 		t.Errorf("template import with 3 args: want ErrUsage, got %v", err)
+	}
+}
+
+// TestM2BEjectAddFlag verifies the --add flag on eject is registered with correct default.
+func TestM2BEjectAddFlag(t *testing.T) {
+	addFlag := ejectCmd.Flags().Lookup("add")
+	if addFlag == nil {
+		t.Fatal("--add flag not defined on eject command")
+	}
+	if addFlag.DefValue != "false" {
+		t.Errorf("--add default = %q, want %q", addFlag.DefValue, "false")
+	}
+}
+
+// TestM2BErrCodeAborted verifies errCode returns "aborted" for template.ErrAborted-wrapped errors.
+func TestM2BErrCodeAborted(t *testing.T) {
+	err := fmt.Errorf("%w after validation failure", template.ErrAborted)
+	if got := errCode(err); got != "aborted" {
+		t.Errorf("errCode(ErrAborted) = %q, want %q", got, "aborted")
+	}
+}
+
+// TestM2BErrCodeAbortedDirectly verifies errCode returns "aborted" for template.ErrAborted directly.
+func TestM2BErrCodeAbortedDirectly(t *testing.T) {
+	if got := errCode(template.ErrAborted); got != "aborted" {
+		t.Errorf("errCode(template.ErrAborted) = %q, want %q", got, "aborted")
 	}
 }

@@ -13,17 +13,21 @@ import (
 
 // GcItem describes a single reclaimable artifact.
 type GcItem struct {
-	Kind   string `json:"kind"`   // "stack" | "container" | "allocation"
+	Kind   string `json:"kind"` // "stack" | "container" | "allocation"
 	Name   string `json:"name"`
 	Reason string `json:"reason"` // see reason constants below
 }
 
 const (
 	gcReasonStopped    = "stopped ephemeral"
-	gcReasonTTL        = "ephemeral TTL expired (24h)"
 	gcReasonOrphaned   = "orphaned ephemeral container (crash hint)"
 	gcReasonAllocation = "allocation for missing stack"
 )
+
+// gcReasonTTLExpired returns the dynamic TTL expiry reason string.
+func gcReasonTTLExpired(ttlString string) string {
+	return fmt.Sprintf("ephemeral TTL expired (%s)", ttlString)
+}
 
 // GcPlan selects reclaimable items in spec order:
 //  1. ephemeral manifests whose stack is fully stopped, OR older than the
@@ -93,30 +97,21 @@ func (e *Engine) GcPlan(ctx context.Context) ([]GcItem, error) {
 		reason := gcReasonStopped
 		if m.Metadata.CreatedAt == "" {
 			expired = true
-			reason = gcReasonTTL
+			reason = gcReasonTTLExpired(ttlStr)
 		} else {
 			createdAt, parseErr := time.Parse(time.RFC3339, m.Metadata.CreatedAt)
 			if parseErr != nil {
 				// Unparseable → treat as expired.
 				expired = true
-				reason = gcReasonTTL
+				reason = gcReasonTTLExpired(ttlStr)
 			} else if now.Sub(createdAt) > ttl {
 				expired = true
-				reason = gcReasonTTL
+				reason = gcReasonTTLExpired(ttlStr)
 			}
 		}
 
 		if expired || running == 0 {
 			items = append(items, GcItem{Kind: "stack", Name: name, Reason: reason})
-		}
-	}
-
-	// Build set of stack names already scheduled for gc (to avoid double-picking
-	// their containers in phase 2).
-	scheduledStacks := make(map[string]bool, len(items))
-	for _, it := range items {
-		if it.Kind == "stack" {
-			scheduledStacks[it.Name] = true
 		}
 	}
 

@@ -131,8 +131,9 @@ func TestGcPlanRunningEphemeralTTLExpired(t *testing.T) {
 	for _, it := range items {
 		if it.Name == "pg" && it.Kind == "stack" {
 			found = true
-			if it.Reason != gcReasonTTL {
-				t.Errorf("reason = %q, want %q", it.Reason, gcReasonTTL)
+			wantReason := gcReasonTTLExpired("1h")
+			if it.Reason != wantReason {
+				t.Errorf("reason = %q, want %q", it.Reason, wantReason)
 			}
 		}
 	}
@@ -174,8 +175,9 @@ func TestGcPlanEphemeralAbsentCreatedAt(t *testing.T) {
 	for _, it := range items {
 		if it.Name == "pg" && it.Kind == "stack" {
 			found = true
-			if it.Reason != gcReasonTTL {
-				t.Errorf("absent createdAt reason = %q, want %q", it.Reason, gcReasonTTL)
+			wantReason := gcReasonTTLExpired("1h")
+			if it.Reason != wantReason {
+				t.Errorf("absent createdAt reason = %q, want %q", it.Reason, wantReason)
 			}
 		}
 	}
@@ -320,7 +322,7 @@ func TestGcRunTearsDown(t *testing.T) {
 	e := gcEngineWithTTL(t, f, "24h")
 
 	items := []GcItem{
-		{Kind: "stack", Name: "pg", Reason: gcReasonTTL},
+		{Kind: "stack", Name: "pg", Reason: gcReasonTTLExpired("24h")},
 		{Kind: "container", Name: "orphan-c1", Reason: gcReasonOrphaned},
 		{Kind: "allocation", Name: "ghost", Reason: gcReasonAllocation},
 	}
@@ -365,7 +367,7 @@ func TestGcRunStackTeardown(t *testing.T) {
 	e := gcEngineWithTTL(t, f, "24h")
 
 	items := []GcItem{
-		{Kind: "stack", Name: "pg", Reason: gcReasonTTL},
+		{Kind: "stack", Name: "pg", Reason: gcReasonTTLExpired("24h")},
 	}
 
 	_, _ = e.GcRun(t.Context(), items)

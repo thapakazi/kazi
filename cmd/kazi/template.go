@@ -92,7 +92,7 @@ var templateNewCmd = &cobra.Command{
 			if declined {
 				// User declined re-edit: remove the dir (CLI's cleanup responsibility).
 				os.RemoveAll(templateDir)
-				return fmt.Errorf("template creation aborted")
+				return fmt.Errorf("%w after validation failure", template.ErrAborted)
 			}
 			// Re-open editor on the compose.yml.
 			if openErr := template.OpenEditor(composePath); openErr != nil {

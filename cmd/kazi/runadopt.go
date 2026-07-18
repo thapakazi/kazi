@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -76,6 +78,31 @@ var ejectCmd = &cobra.Command{
 		dest, addCmd, err := eng.Eject(tmpl, dir, ejectAdd)
 		if err != nil {
 			return err
+		}
+		if jsonOut {
+			type ejectResult struct {
+				APIVersion string `json:"apiVersion"`
+				Kind       string `json:"kind"`
+				Action     string `json:"action"`
+				Template   string `json:"template"`
+				Dest       string `json:"dest"`
+				AddCommand string `json:"addCommand"`
+				Registered bool   `json:"registered,omitempty"`
+				OK         bool   `json:"ok"`
+			}
+			r := ejectResult{
+				APIVersion: apiVersion,
+				Kind:       "Result",
+				Action:     "eject",
+				Template:   tmpl,
+				Dest:       dest,
+				AddCommand: addCmd,
+				OK:         true,
+			}
+			if ejectAdd {
+				r.Registered = true
+			}
+			return json.NewEncoder(os.Stdout).Encode(r)
 		}
 		if ejectAdd {
 			fmt.Printf("ejected %s → %s\nregistered: %s\n", tmpl, dest, addCmd)
