@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/thapakazi/kazi/internal/runtime"
@@ -51,6 +52,8 @@ func TestAddNameTaken(t *testing.T) {
 	}
 	if _, err := e.Add("blog", dir); err == nil {
 		t.Error("second Add with same name should fail")
+	} else if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("expected error to contain %q, got %v", "already exists", err)
 	}
 }
 

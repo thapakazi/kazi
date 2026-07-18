@@ -48,7 +48,10 @@ func (e *Engine) Add(name, path string) (store.Manifest, error) {
 	m := store.Manifest{APIVersion: "kazi.dev/v1alpha1", Kind: "Stack"}
 	m.Metadata.Name = name
 	m.Spec.Source.Compose = abs
-	return m, store.SaveStack(m)
+	if err := store.SaveStack(m); err != nil {
+		return store.Manifest{}, err
+	}
+	return m, nil
 }
 
 // Remove deregisters a stack — deletes the manifest only, never touches
