@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"context"
 	"io"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -105,25 +107,31 @@ func TestTrustDarwinCommands(t *testing.T) {
 	old := osOverride
 	osOverride = "darwin"
 	defer func() { osOverride = old }()
-	sudoRun = func(cmd []string) []string { return append([]string{"echo"}, cmd...) } // stub sudo for test
-	defer func() { sudoRun = realSudo }()
+	// Record host-side commands instead of running sudo for real.
+	var hostCalls [][]string
+	oldHost := hostCmd
+	hostCmd = func(ctx context.Context, args []string) *exec.Cmd {
+		hostCalls = append(hostCalls, args)
+		return exec.Command("true")
+	}
+	defer func() { hostCmd = oldHost }()
 	if err := e.Trust(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.Cmds) == 0 || !strings.HasPrefix(strings.Join(f.Cmds[0], " "), "exec kazi-proxy cat") {
 		t.Errorf("cert extraction missing: %v", f.Cmds)
 	}
-	// Verify the darwin branch actually invokes security add-trusted-cert.
-	var foundAddTrusted bool
-	for _, cmd := range f.Cmds {
-		joined := strings.Join(cmd, " ")
-		if strings.Contains(joined, "add-trusted-cert") {
-			foundAddTrusted = true
-			break
-		}
+	// The keychain install runs on the HOST, never through the container
+	// runtime: the only runtime command allowed is the cert extraction.
+	if len(f.Cmds) != 1 {
+		t.Errorf("trust must not route host commands through the runtime; recorded runtime cmds: %v", f.Cmds)
 	}
-	if !foundAddTrusted {
-		t.Errorf("darwin Trust must invoke security add-trusted-cert; recorded cmds: %v", f.Cmds)
+	if len(hostCalls) != 1 {
+		t.Fatalf("want 1 host command, got %v", hostCalls)
+	}
+	joined := strings.Join(hostCalls[0], " ")
+	if !strings.HasPrefix(joined, "sudo security add-trusted-cert") {
+		t.Errorf("host command = %q, want sudo security add-trusted-cert ...", joined)
 	}
 }
 

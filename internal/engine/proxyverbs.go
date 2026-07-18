@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -36,6 +37,15 @@ var realSudo = func(cmd []string) []string {
 
 // sudoRun is the active sudo builder; tests replace this to avoid real sudo.
 var sudoRun = realSudo
+
+// hostCmd builds a command that runs directly on the HOST — never through
+// the container runtime. Trust's sudo/security/update-ca-certificates
+// calls are host-side; routing them through rt.Cmd would prefix the
+// runtime binary (`docker sudo security ...`). A var so tests can record
+// invocations without a real sudo prompt.
+var hostCmd = func(ctx context.Context, args []string) *exec.Cmd {
+	return exec.CommandContext(ctx, args[0], args[1:]...)
+}
 
 // goos returns the effective OS name.
 func goos() string {
@@ -420,17 +430,17 @@ func (e *Engine) Trust(ctx context.Context, uninstall bool) error {
 			"-k", "/Library/Keychains/System.keychain",
 			tmpPath,
 		})
-		if err := compose.Run(e.RT.Cmd(ctx, args...), e.Out, e.Err); err != nil {
+		if err := compose.Run(hostCmd(ctx, args), e.Out, e.Err); err != nil {
 			return fmt.Errorf("trust: installing cert on darwin: %w", err)
 		}
 	case "linux":
 		dest := "/usr/local/share/ca-certificates/kazi-local-ca.crt"
 		cpArgs := sudoRun([]string{"cp", tmpPath, dest})
-		if err := compose.Run(e.RT.Cmd(ctx, cpArgs...), e.Out, e.Err); err != nil {
+		if err := compose.Run(hostCmd(ctx, cpArgs), e.Out, e.Err); err != nil {
 			return fmt.Errorf("trust: copying cert on linux: %w", err)
 		}
 		updateArgs := sudoRun([]string{"update-ca-certificates"})
-		if err := compose.Run(e.RT.Cmd(ctx, updateArgs...), e.Out, e.Err); err != nil {
+		if err := compose.Run(hostCmd(ctx, updateArgs), e.Out, e.Err); err != nil {
 			return fmt.Errorf("trust: updating ca-certificates on linux: %w", err)
 		}
 	default:
@@ -447,17 +457,17 @@ func (e *Engine) trustUninstall(ctx context.Context, os_ string) error {
 			"-c", "Caddy Local Authority",
 			"/Library/Keychains/System.keychain",
 		})
-		if err := compose.Run(e.RT.Cmd(ctx, args...), e.Out, e.Err); err != nil {
+		if err := compose.Run(hostCmd(ctx, args), e.Out, e.Err); err != nil {
 			return fmt.Errorf("trust --uninstall: removing cert on darwin: %w", err)
 		}
 	case "linux":
 		dest := "/usr/local/share/ca-certificates/kazi-local-ca.crt"
 		rmArgs := sudoRun([]string{"rm", dest})
-		if err := compose.Run(e.RT.Cmd(ctx, rmArgs...), e.Out, e.Err); err != nil {
+		if err := compose.Run(hostCmd(ctx, rmArgs), e.Out, e.Err); err != nil {
 			return fmt.Errorf("trust --uninstall: removing cert on linux: %w", err)
 		}
 		updateArgs := sudoRun([]string{"update-ca-certificates", "--fresh"})
-		if err := compose.Run(e.RT.Cmd(ctx, updateArgs...), e.Out, e.Err); err != nil {
+		if err := compose.Run(hostCmd(ctx, updateArgs), e.Out, e.Err); err != nil {
 			return fmt.Errorf("trust --uninstall: updating ca-certificates on linux: %w", err)
 		}
 	default:
