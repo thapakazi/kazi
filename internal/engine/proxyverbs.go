@@ -18,10 +18,10 @@ import (
 type Endpoint struct {
 	Stack   string `json:"stack"`
 	Service string `json:"service"`
-	Kind    string `json:"kind"`            // "http" | "tcp" | "hint"
-	URL     string `json:"url,omitempty"`   // https://blog.localhost | localhost:42017
-	Target  string `json:"target"`          // web:80 | postgres:5432
-	Note    string `json:"note,omitempty"`  // nudges
+	Kind    string `json:"kind"`           // "http" | "tcp" | "hint"
+	URL     string `json:"url,omitempty"`  // https://blog.localhost | localhost:42017
+	Target  string `json:"target"`         // web:80 | postgres:5432
+	Note    string `json:"note,omitempty"` // nudges
 }
 
 // osOverride allows tests to override GOOS without real OS switching.
@@ -94,7 +94,9 @@ func (e *Engine) Expose(ctx context.Context, stack, service string, port int, re
 		// Free allocation.
 		ps.Free(stack, service)
 		// Targeted recreate if running.
-		_ = e.exposeRecreate(ctx, m, stack, service)
+		if err := e.exposeRecreate(ctx, m, stack, service); err != nil {
+			fmt.Fprintf(e.Err, "kazi: warning: expose recreate failed: %v\n", err)
+		}
 		return 0, nil
 	}
 
@@ -139,7 +141,9 @@ func (e *Engine) Expose(ctx context.Context, stack, service string, port int, re
 	}
 
 	// Targeted recreate if running.
-	_ = e.exposeRecreate(ctx, m, stack, service)
+	if err := e.exposeRecreate(ctx, m, stack, service); err != nil {
+		fmt.Fprintf(e.Err, "kazi: warning: expose recreate failed: %v\n", err)
+	}
 
 	return hostPort, nil
 }
@@ -252,10 +256,12 @@ func (e *Engine) Urls(ctx context.Context, stack string) ([]Endpoint, error) {
 		project := "kazi-" + name
 		jsonOut, configErr := compose.Output(e.RT.ComposeCmd(ctx, project, dir, []string{composeFile}, "config", "--format", "json"))
 		if configErr != nil {
+			fmt.Fprintf(e.Err, "kazi: warning: reading compose config for %s: %v\n", name, configErr)
 			continue
 		}
 		svcs, parseErr := compose.ParseConfig([]byte(jsonOut))
 		if parseErr != nil {
+			fmt.Fprintf(e.Err, "kazi: warning: reading compose config for %s: %v\n", name, parseErr)
 			continue
 		}
 
@@ -274,7 +280,7 @@ func (e *Engine) Urls(ctx context.Context, stack string) ([]Endpoint, error) {
 
 		// NeedsDecl hint: multiple HTTP services, no primary declared.
 		if plan.NeedsDecl {
-			snippet := fmt.Sprintf("spec:\n  proxy:\n    service: <primary-service>  # run `kazi urls` after adding\n")
+			snippet := "spec:\n  proxy:\n    service: <primary-service>  # run `kazi urls` after adding\n"
 			endpoints = append(endpoints, Endpoint{
 				Stack:   name,
 				Service: "",

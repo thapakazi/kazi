@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"io"
 	"strings"
 	"testing"
 
@@ -111,5 +112,95 @@ func TestTrustDarwinCommands(t *testing.T) {
 	}
 	if len(f.Cmds) == 0 || !strings.HasPrefix(strings.Join(f.Cmds[0], " "), "exec kazi-proxy cat") {
 		t.Errorf("cert extraction missing: %v", f.Cmds)
+	}
+	// Verify the darwin branch actually invokes security add-trusted-cert.
+	var foundAddTrusted bool
+	for _, cmd := range f.Cmds {
+		joined := strings.Join(cmd, " ")
+		if strings.Contains(joined, "add-trusted-cert") {
+			foundAddTrusted = true
+			break
+		}
+	}
+	if !foundAddTrusted {
+		t.Errorf("darwin Trust must invoke security add-trusted-cert; recorded cmds: %v", f.Cmds)
+	}
+}
+
+func TestUrlsConfigFailureWarning(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	registerStack(t, "blog")
+	// ConfigJSON set to invalid JSON so ParseConfig errors inside Urls.
+	f := &runtime.Fake{ConfigJSON: "not-valid-json"}
+	var errBuf strings.Builder
+	cfg, _ := store.LoadConfig()
+	e := New(f, cfg, io.Discard, &errBuf)
+
+	// Urls must return nil error and emit a warning on Err.
+	eps, err := e.Urls(t.Context(), "blog")
+	if err != nil {
+		t.Fatalf("Urls must return nil error even when compose config fails: %v", err)
+	}
+	if len(eps) != 0 {
+		t.Errorf("expected no endpoints when config fails, got: %+v", eps)
+	}
+	if !strings.Contains(errBuf.String(), "kazi: warning: reading compose config for blog") {
+		t.Errorf("expected config warning on Err writer; got: %q", errBuf.String())
+	}
+}
+
+func TestExposeRecreateWarningOnFailure(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	blogDir := registerStack(t, "blog")
+	// A running container for "blog" so exposeRecreate sees it as running.
+	containers := []runtime.Container{
+		{
+			Name:  "blog-web-1",
+			State: "running",
+			Labels: map[string]string{
+				"com.docker.compose.project":             "kazi-blog",
+				"com.docker.compose.project.working_dir": blogDir,
+				"com.docker.compose.service":             "web",
+				"kazi.managed":                           "true",
+				"kazi.stack":                             "blog",
+			},
+		},
+	}
+	// ConfigJSON supplies web:80 for exposeRecreate's buildOverride call too.
+	f := &runtime.Fake{
+		ConfigJSON: blogConfigJSON,
+		Containers: containers,
+		// FailPrefix on Cmd only affects RT.Cmd; compose "up" goes through ComposeCmd.
+		// We make the ComposeCmd "up" call fail by giving Fake a FailPrefix that
+		// matches on args joined — but Fake.ComposeCmd doesn't honour FailPrefix.
+		// Instead, override ConfigJSON to empty so ParseConfig errors during buildOverride
+		// inside exposeRecreate, which causes it to return an error.
+	}
+	// First: allocate so Expose (remove=false) succeeds up to the recreate step.
+	// We need valid ConfigJSON for the initial Expose call's detectContainerPort, then
+	// fail inside exposeRecreate's buildOverride. We achieve this by calling Expose
+	// with an explicit port (skipping detectContainerPort) and then swapping ConfigJSON
+	// to invalid JSON so exposeRecreate's compose config call yields a parse error.
+	var errBuf strings.Builder
+	cfg, _ := store.LoadConfig()
+	e := New(f, cfg, io.Discard, &errBuf)
+
+	// Expose with pinned port so detectContainerPort is skipped.
+	_, err := e.Expose(t.Context(), "blog", "db", 42500, false)
+	if err != nil {
+		t.Fatalf("initial expose failed: %v", err)
+	}
+
+	// Now corrupt ConfigJSON so the NEXT compose config call (inside exposeRecreate)
+	// returns invalid JSON, causing ParseConfig to error inside buildOverride.
+	f.ConfigJSON = "not-json"
+
+	// Remove should trigger exposeRecreate, which will fail, but Expose should return nil.
+	_, err = e.Expose(t.Context(), "blog", "db", 0, true)
+	if err != nil {
+		t.Fatalf("Expose(remove) must return nil even when recreate fails: %v", err)
+	}
+	if !strings.Contains(errBuf.String(), "kazi: warning: expose recreate failed") {
+		t.Errorf("expected recreate warning on Err writer; got: %q", errBuf.String())
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/thapakazi/kazi/internal/compose"
 	"github.com/thapakazi/kazi/internal/labels"
@@ -16,7 +17,7 @@ import (
 // searching in the standard name order. Extracted so both Add and Up can use it.
 func findComposeFile(dir string) (string, error) {
 	for _, n := range composeNames {
-		candidate := fmt.Sprintf("%s/%s", dir, n)
+		candidate := filepath.Join(dir, n)
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate, nil
 		}
@@ -48,8 +49,11 @@ func (e *Engine) Up(ctx context.Context, name string) error {
 
 	if t.kind == KindRegistered || t.kind == KindDiscovered {
 		var buildErr error
-		m, _ := store.LoadStack(name)
-		overridePath, plan, buildErr = e.buildOverride(ctx, t, &m)
+		var mPtr *store.Manifest
+		if lm, err := store.LoadStack(name); err == nil {
+			mPtr = &lm
+		}
+		overridePath, plan, buildErr = e.buildOverride(ctx, t, mPtr)
 		if buildErr != nil {
 			return buildErr
 		}
