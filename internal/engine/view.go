@@ -35,7 +35,13 @@ func (e *Engine) snapshot(ctx context.Context) ([]StackInfo, []ContainerInfo, er
 	byProject := map[string]*projectGroup{}
 	var order []string
 	var loose []ContainerInfo
+	// byName indexes every container so adopted stacks can claim by name.
+	byName := map[string]runtime.Container{}
+	// kaziStackClaimed tracks compose-project-less containers already claimed
+	// by a kazi.stack label so they never fall through to loose.
+	kaziStackClaimed := map[string]bool{}
 	for _, c := range cs {
+		byName[c.Name] = c
 		p := c.Labels[labels.ComposeProject]
 		if p == "" {
 			loose = append(loose, toInfo(c, "", KindUnmanaged))
@@ -50,17 +56,61 @@ func (e *Engine) snapshot(ctx context.Context) ([]StackInfo, []ContainerInfo, er
 		g.cs = append(g.cs, c)
 	}
 
+	// looseByStack: compose-project-less containers grouped by their kazi.stack
+	// label (image stacks launched via `run`).
+	looseByStack := map[string][]runtime.Container{}
+	for _, c := range cs {
+		if c.Labels[labels.ComposeProject] != "" {
+			continue
+		}
+		if s := c.Labels[labels.Stack]; s != "" {
+			looseByStack[s] = append(looseByStack[s], c)
+		}
+	}
+
 	claimed := map[string]bool{}
 	var stacks []StackInfo
 	for _, m := range manifests {
-		dir := filepath.Dir(m.Spec.Source.Compose)
+		srcKind := m.Spec.Source.Kind()
+
+		// Non-compose registered stacks claim their containers directly.
+		switch srcKind {
+		case "image":
+			si := StackInfo{Name: m.Metadata.Name, Kind: KindRegistered, Project: "kazi-" + m.Metadata.Name}
+			if grp, ok := looseByStack[m.Metadata.Name]; ok {
+				si.Containers = imageInfos(grp, m.Metadata.Name)
+				for _, c := range grp {
+					kaziStackClaimed[c.Name] = true
+				}
+			}
+			si.Running, si.Total = tally(si.Containers)
+			stacks = append(stacks, si)
+			continue
+		case "containers":
+			si := StackInfo{Name: m.Metadata.Name, Kind: KindRegistered}
+			for _, name := range m.Spec.Source.Containers {
+				if c, ok := byName[name]; ok {
+					si.Containers = append(si.Containers, toInfo(c, m.Metadata.Name, KindRegistered))
+					kaziStackClaimed[c.Name] = true
+				}
+			}
+			si.Running, si.Total = tally(si.Containers)
+			stacks = append(stacks, si)
+			continue
+		}
+
+		// compose / template registered stacks: match by project or working dir.
+		dir := ""
+		if m.Spec.Source.Compose != "" {
+			dir = filepath.Dir(m.Spec.Source.Compose)
+		}
 		si := StackInfo{Name: m.Metadata.Name, Kind: KindRegistered, Dir: dir, Project: "kazi-" + m.Metadata.Name}
 		for _, p := range order {
 			g := byProject[p]
 			if claimed[p] {
 				continue
 			}
-			if p == "kazi-"+m.Metadata.Name || g.dir == dir {
+			if p == "kazi-"+m.Metadata.Name || (dir != "" && g.dir == dir) {
 				si.Project = p
 				si.Containers = toInfos(g.cs, m.Metadata.Name, KindRegistered)
 				claimed[p] = true
@@ -69,6 +119,19 @@ func (e *Engine) snapshot(ctx context.Context) ([]StackInfo, []ContainerInfo, er
 		}
 		si.Running, si.Total = tally(si.Containers)
 		stacks = append(stacks, si)
+	}
+
+	// Adopted/image containers claimed above must not appear as loose. Rebuild
+	// the loose list dropping anything a manifest claimed by name.
+	if len(kaziStackClaimed) > 0 {
+		filtered := loose[:0]
+		for _, ci := range loose {
+			if kaziStackClaimed[ci.Name] {
+				continue
+			}
+			filtered = append(filtered, ci)
+		}
+		loose = filtered
 	}
 	for _, p := range order {
 		if claimed[p] {
@@ -107,6 +170,19 @@ func toInfos(cs []runtime.Container, stack string, kind Kind) []ContainerInfo {
 	out := make([]ContainerInfo, 0, len(cs))
 	for _, c := range cs {
 		out = append(out, toInfo(c, stack, kind))
+	}
+	return out
+}
+
+// imageInfos annotates an image stack's containers: Service is the stack name
+// (image stacks have a single service named after the stack, not a compose
+// service label).
+func imageInfos(cs []runtime.Container, stack string) []ContainerInfo {
+	out := make([]ContainerInfo, 0, len(cs))
+	for _, c := range cs {
+		info := toInfo(c, stack, KindRegistered)
+		info.Service = stack
+		out = append(out, info)
 	}
 	return out
 }

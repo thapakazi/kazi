@@ -85,6 +85,17 @@ func TestFakeCmdScripting(t *testing.T) {
 	}
 }
 
+func TestFakeFailComposeArgs(t *testing.T) {
+	f := &Fake{FailComposeArgs: []string{"down"}}
+	// A "down" invocation fails; an "up" invocation succeeds.
+	if err := f.ComposeCmd(t.Context(), "p", "/d", nil, "down", "-v").Run(); err == nil {
+		t.Error("down should fail (scripted via FailComposeArgs)")
+	}
+	if err := f.ComposeCmd(t.Context(), "p", "/d", nil, "up", "-d").Run(); err != nil {
+		t.Errorf("up should succeed: %v", err)
+	}
+}
+
 func TestFakeComposeConfigJSON(t *testing.T) {
 	f := &Fake{ConfigJSON: `{"services":{}}`}
 	out, err := f.ComposeCmd(t.Context(), "p", "/d", nil, "config", "--format", "json").Output()

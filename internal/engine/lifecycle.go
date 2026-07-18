@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/thapakazi/kazi/internal/compose"
 	"github.com/thapakazi/kazi/internal/labels"
 	"github.com/thapakazi/kazi/internal/proxy"
+	"github.com/thapakazi/kazi/internal/runtime"
 	"github.com/thapakazi/kazi/internal/store"
+	"github.com/thapakazi/kazi/internal/template"
 )
 
 // findComposeFile returns the absolute path to the compose file in dir,
@@ -25,17 +28,17 @@ func findComposeFile(dir string) (string, error) {
 	return "", fmt.Errorf("no compose file (compose.y(a)ml or docker-compose.y(a)ml) found in %s", dir)
 }
 
-// Up brings a stack up detached. For registered stacks kazi injects its
-// labels through a generated override file (pure compose spec, portable
-// across runtimes). compose up -d is already idempotent — an
-// already-running stack exits 0.
+// Up brings a stack up detached, dispatching per source kind. For compose /
+// template stacks kazi injects its labels through a generated override file
+// (pure compose spec, portable across runtimes); compose up -d is idempotent.
+// Image stacks create-or-start their container; adopted-container stacks start
+// their named containers.
 func (e *Engine) Up(ctx context.Context, name string) error {
 	t, err := e.resolve(ctx, name)
 	if err != nil {
 		return err
 	}
-
-	// For discovered stacks, we need to find the compose file now
+	// Discovered compose stacks must locate their compose file lazily.
 	if t.kind == KindDiscovered && t.composeFile == "" {
 		found, ferr := findComposeFile(t.dir)
 		if ferr != nil {
@@ -43,53 +46,14 @@ func (e *Engine) Up(ctx context.Context, name string) error {
 		}
 		t.composeFile = found
 	}
-
-	var overridePath string
-	var plan proxy.Plan
-
-	if t.kind == KindRegistered || t.kind == KindDiscovered {
-		var buildErr error
-		var mPtr *store.Manifest
-		if lm, err := store.LoadStack(name); err == nil {
-			mPtr = &lm
-		}
-		overridePath, plan, buildErr = e.buildOverride(ctx, t, mPtr)
-		if buildErr != nil {
-			return buildErr
-		}
-		defer os.Remove(overridePath)
-	}
-
-	// Ensure the kazi network exists before compose up when any service is routable
-	if len(plan.Routable) > 0 {
-		if err := proxy.EnsureNetwork(ctx, e.RT); err != nil {
-			return err
-		}
-	}
-
-	var files []string
-	if t.composeFile != "" {
-		files = []string{t.composeFile}
-	}
-	if overridePath != "" {
-		files = append(files, overridePath)
-	}
-
-	if err := e.frame(compose.Run(e.RT.ComposeCmd(ctx, t.project, t.dir, files, "up", "-d"), e.Out, e.Err), "up", name); err != nil {
-		return err
-	}
-
-	// syncProxy with the extra plan we just computed so the route appears
-	// even when no containers are yet visible in the snapshot
-	e.syncProxy(ctx, "", name, &plan)
-	return nil
+	return strategyFor(t.srcKind).up(ctx, e, t)
 }
 
 // buildOverride parses compose config --format json, builds the routing plan,
 // allocates ports for expose entries, then renders the override file.
 // Caller is responsible for removing the temp file.
 func (e *Engine) buildOverride(ctx context.Context, t target, m *store.Manifest) (path string, plan proxy.Plan, err error) {
-	jsonOut, err := compose.Output(e.RT.ComposeCmd(ctx, t.project, t.dir, []string{t.composeFile}, "config", "--format", "json"))
+	jsonOut, err := compose.Output(e.composeCmdFor(ctx, t, "config", "--format", "json"))
 	if err != nil {
 		return "", proxy.Plan{}, e.frame(err, "config", t.name)
 	}
@@ -219,49 +183,99 @@ func (e *Engine) buildOverride(ctx context.Context, t target, m *store.Manifest)
 	return f.Name(), plan, nil
 }
 
-// Down stops and removes a stack's containers. Never passes -v in M0.
+// Down stops a stack, dispatching per source. Compose stacks run
+// `compose down` (never -v here); image stacks stop their container; adopted
+// stacks stop their named containers. Public Down passes no extra args.
 func (e *Engine) Down(ctx context.Context, name string) error {
 	t, err := e.resolve(ctx, name)
 	if err != nil {
 		return err
 	}
-	if err := e.frame(compose.Run(e.RT.ComposeCmd(ctx, t.project, t.dir, t.files(), "down"), e.Out, e.Err), "down", name); err != nil {
-		return err
-	}
-	// exclude this stack from the desired routes (it just went down)
-	e.syncProxy(ctx, name, "", nil)
-	return nil
+	return strategyFor(t.srcKind).down(ctx, e, t)
 }
 
+// Restart restarts a stack per source.
 func (e *Engine) Restart(ctx context.Context, name string) error {
 	t, err := e.resolve(ctx, name)
 	if err != nil {
 		return err
 	}
-	if err := e.frame(compose.Run(e.RT.ComposeCmd(ctx, t.project, t.dir, t.files(), "restart"), e.Out, e.Err), "restart", name); err != nil {
-		return err
-	}
-	e.syncProxy(ctx, "", "", nil)
-	return nil
+	return strategyFor(t.srcKind).restart(ctx, e, t)
 }
 
-// Logs streams compose logs; service may be empty for all services.
+// Logs streams a stack's logs per source; service may be empty for all
+// services (compose) or to pick the first container (adopted).
 func (e *Engine) Logs(ctx context.Context, name, service string, follow bool, tail string) error {
 	t, err := e.resolve(ctx, name)
 	if err != nil {
 		return err
 	}
-	args := []string{"logs"}
-	if follow {
-		args = append(args, "-f")
+	return strategyFor(t.srcKind).logs(ctx, e, t, service, follow, tail)
+}
+
+// desiredRoutes builds the reverse-proxy routes for a non-compose stack from
+// strategy data (no `compose config`). Compose/template stacks return nil —
+// their routes come from BuildPlan over the parsed config.
+//
+//   - image: alias <stack>.<stack>, host <stack>.localhost, port from the
+//     image's exposed-port classification (nil if not HTTP-routable).
+//   - containers: one route per adopted container that classifies HTTP; a
+//     single HTTP container gets the bare <stack>.localhost, otherwise
+//     <container>.<stack>.localhost.
+func (e *Engine) desiredRoutes(ctx context.Context, t target) []proxy.Route {
+	switch t.srcKind {
+	case "image":
+		port, ok := e.imageRoute(ctx, t)
+		if !ok {
+			return nil
+		}
+		return []proxy.Route{{
+			Stack: t.name, Service: t.name,
+			Hostname: t.name + ".localhost",
+			Alias:    t.name + "." + t.name,
+			Port:     port,
+		}}
+	case "containers":
+		cs, err := e.RT.Ps(ctx)
+		if err != nil {
+			return nil
+		}
+		byName := map[string]runtime.Container{}
+		for _, c := range cs {
+			byName[c.Name] = c
+		}
+		type httpC struct {
+			name string
+			port int
+		}
+		var httpCs []httpC
+		for _, name := range t.containers {
+			c, ok := byName[name]
+			if !ok {
+				continue
+			}
+			port, isHTTP := classifyPorts(parsePsPorts(c.Ports), e.Cfg)
+			if isHTTP {
+				httpCs = append(httpCs, httpC{name: name, port: port})
+			}
+		}
+		var routes []proxy.Route
+		for _, h := range httpCs {
+			host := h.name + "." + t.name + ".localhost"
+			if len(httpCs) == 1 {
+				host = t.name + ".localhost"
+			}
+			routes = append(routes, proxy.Route{
+				Stack: t.name, Service: h.name,
+				Hostname: host,
+				Alias:    h.name + "." + t.name,
+				Port:     h.port,
+			})
+		}
+		return routes
+	default:
+		return nil
 	}
-	if tail != "" {
-		args = append(args, "--tail", tail)
-	}
-	if service != "" {
-		args = append(args, service)
-	}
-	return e.frame(compose.Run(e.RT.ComposeCmd(ctx, t.project, t.dir, t.files(), args...), e.Out, e.Err), "logs", name)
 }
 
 // files returns the -f list for lifecycle verbs: the manifest's compose
@@ -360,18 +374,52 @@ func (e *Engine) doSyncProxy(ctx context.Context, exclude string, extraStack str
 		if meta.name == proxy.StackName {
 			continue
 		}
+		m, hasManifest := manifestByName[meta.name]
+
+		// Non-compose registered stacks route from strategy data, not from
+		// `compose config`. Build a minimal target and reuse desiredRoutes.
+		if hasManifest {
+			switch m.Spec.Source.Kind() {
+			case "image":
+				t := target{name: meta.name, srcKind: "image", image: m.Spec.Source.Image, manifest: &m}
+				allRoutes = append(allRoutes, e.desiredRoutes(ctx, t)...)
+				continue
+			case "containers":
+				t := target{name: meta.name, srcKind: "containers", containers: m.Spec.Source.Containers, manifest: &m}
+				allRoutes = append(allRoutes, e.desiredRoutes(ctx, t)...)
+				continue
+			}
+		}
+
 		var decl *store.ProxySpec
-		if m, ok := manifestByName[meta.name]; ok {
+		if hasManifest {
 			decl = m.Spec.Proxy
 		}
 
-		// For registered stacks: get compose file from manifest.
-		// For discovered stacks: find compose file in dir.
+		// Compose stacks: locate the compose file (manifest first, else dir).
+		// Template stacks materialize on resolve; their manifest has no compose
+		// path, so re-resolve via the template to get dir + env.
 		composeFile := ""
-		if m, ok := manifestByName[meta.name]; ok && m.Spec.Source.Compose != "" {
+		dir := meta.dir
+		project := "kazi-" + meta.name
+		var envCmd func(args ...string) *exec.Cmd
+		if hasManifest && m.Spec.Source.Compose != "" {
 			composeFile = m.Spec.Source.Compose
+			dir = filepath.Dir(composeFile)
+		} else if hasManifest && m.Spec.Source.Template != "" {
+			tdir, matErr := template.Materialize(m.Spec.Source.Template)
+			if matErr != nil {
+				continue
+			}
+			cf, cfErr := findComposeFile(tdir)
+			if cfErr != nil {
+				continue
+			}
+			composeFile, dir = cf, tdir
+			mCopy := m
+			t := target{name: meta.name, srcKind: "template", dir: tdir, composeFile: cf, project: project, manifest: &mCopy}
+			envCmd = func(args ...string) *exec.Cmd { return e.composeCmdFor(ctx, t, args...) }
 		} else if meta.dir != "" {
-			// best-effort: try to find compose file
 			if found, ferr := findComposeFile(meta.dir); ferr == nil {
 				composeFile = found
 			}
@@ -381,8 +429,13 @@ func (e *Engine) doSyncProxy(ctx context.Context, exclude string, extraStack str
 			continue
 		}
 
-		project := "kazi-" + meta.name
-		jsonOut, configErr := compose.Output(e.RT.ComposeCmd(ctx, project, meta.dir, []string{composeFile}, "config", "--format", "json"))
+		var cmd *exec.Cmd
+		if envCmd != nil {
+			cmd = envCmd("config", "--format", "json")
+		} else {
+			cmd = e.RT.ComposeCmd(ctx, project, dir, []string{composeFile}, "config", "--format", "json")
+		}
+		jsonOut, configErr := compose.Output(cmd)
 		if configErr != nil {
 			// best effort: skip this stack
 			continue
