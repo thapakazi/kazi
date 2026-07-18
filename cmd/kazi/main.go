@@ -8,7 +8,7 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:           "kazi",
-	Short:         "Compose-preferred, runtime-agnostic local stack manager",
+	Short:         "The control plane for your local containers",
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }

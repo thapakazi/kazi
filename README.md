@@ -1,8 +1,8 @@
 # kazi
 
-A compose-preferred, runtime-agnostic local stack manager.
+**The control plane for your local containers.**
 
-kazi lets you see every container on your machine grouped by stack and drive existing compose projects without `cd`-ing into them. Docker is first-class and fully tested; podman and nerdctl are auto-detected and best-effort via the same compose-CLI contract.
+kazi is a compose-preferred, runtime-agnostic local stack manager: it lets you see every container on your machine grouped by stack and drive existing compose projects without `cd`-ing into them. Docker is first-class and fully tested; podman and nerdctl are auto-detected and best-effort via the same compose-CLI contract.
 
 > **Status: M0 (skeleton) under active development.**
 > See [docs/roadmap.md](docs/roadmap.md) for the full plan and [docs/superpowers/specs/2026-07-17-kazi-m0-design.md](docs/superpowers/specs/2026-07-17-kazi-m0-design.md) for the M0 design spec.

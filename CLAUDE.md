@@ -1,6 +1,6 @@
 # kazi
 
-Compose-preferred, runtime-agnostic (docker/podman/nerdctl) local stack manager. Go 1.25, module `github.com/thapakazi/kazi`, cobra CLI.
+"The control plane for your local containers" — that's the tagline (CLI help, README pitch). Technically: a compose-preferred, runtime-agnostic (docker/podman/nerdctl) local stack manager. Go 1.25, module `github.com/thapakazi/kazi`, cobra CLI.
 
 Note: docs/roadmap.md says "kaji" — the decided name is **kazi**. Use kazi everywhere.
 
