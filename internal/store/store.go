@@ -95,11 +95,13 @@ func applyDefaults(c *Config) {
 	if c.Spec.Runtime == "" {
 		c.Spec.Runtime = "auto"
 	}
+	// Copy the default slices so callers appending to the loaded config
+	// can never mutate the shared package-level defaults.
 	if len(c.Spec.Proxy.TCPPorts) == 0 {
-		c.Spec.Proxy.TCPPorts = DefaultTCPPorts
+		c.Spec.Proxy.TCPPorts = append([]int(nil), DefaultTCPPorts...)
 	}
 	if len(c.Spec.Proxy.HTTPPorts) == 0 {
-		c.Spec.Proxy.HTTPPorts = DefaultHTTPPorts
+		c.Spec.Proxy.HTTPPorts = append([]int(nil), DefaultHTTPPorts...)
 	}
 	if c.Spec.Ports.Range == "" {
 		c.Spec.Ports.Range = DefaultPortRange
