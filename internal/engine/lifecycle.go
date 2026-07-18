@@ -149,14 +149,16 @@ func (e *Engine) buildOverride(ctx context.Context, t target, m *store.Manifest)
 	}
 
 	// Build OverrideService list
+	ephemeral := m != nil && m.Spec.Ephemeral
 	var overrideSvcs []proxy.OverrideService
 	for _, s := range svcs {
 		routable := plan.Routable[s.Name]
 		os_ := proxy.OverrideService{
-			Name:     s.Name,
-			Routable: routable,
-			Alias:    s.Name + "." + t.name,
-			Networks: s.Networks,
+			Name:      s.Name,
+			Routable:  routable,
+			Alias:     s.Name + "." + t.name,
+			Networks:  s.Networks,
+			Ephemeral: ephemeral,
 		}
 		if portBindings != nil {
 			os_.Ports = portBindings[s.Name]

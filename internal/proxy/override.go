@@ -9,11 +9,12 @@ import (
 
 // OverrideService describes one service's contribution to the compose override.
 type OverrideService struct {
-	Name     string
-	Routable bool     // attach to the kazi network with Alias
-	Alias    string   // <service>.<stack>
-	Networks []string // service's existing networks from compose config; empty => ["default"]
-	Ports    []string // kazi-added bindings "42017:5432" (from spec.expose)
+	Name      string
+	Routable  bool     // attach to the kazi network with Alias
+	Alias     string   // <service>.<stack>
+	Networks  []string // service's existing networks from compose config; empty => ["default"]
+	Ports     []string // kazi-added bindings "42017:5432" (from spec.expose)
+	Ephemeral bool     // when true, injects kazi.ephemeral=true label (crash hint for gc)
 }
 
 // RenderOverride renders the compose override file that Up passes as an extra -f.
@@ -40,6 +41,9 @@ func RenderOverride(stack string, svcs []OverrideService) []byte {
 		fmt.Fprintf(&b, "    labels:\n")
 		fmt.Fprintf(&b, "      %s: \"true\"\n", labels.Managed)
 		fmt.Fprintf(&b, "      %s: %q\n", labels.Stack, stack)
+		if s.Ephemeral {
+			fmt.Fprintf(&b, "      %s: \"true\"\n", labels.Ephemeral)
+		}
 
 		// Networks block — only for routable services.
 		if s.Routable {
