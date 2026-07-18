@@ -2,7 +2,6 @@ package engine
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +10,17 @@ import (
 	"github.com/thapakazi/kazi/internal/runtime"
 	"github.com/thapakazi/kazi/internal/store"
 )
+
+// testConfig returns a Config with seeded defaults for use in tests that
+// don't need the testEngine helper (e.g. when passing runtime.Fake inline).
+func testConfig(t *testing.T) store.Config {
+	t.Helper()
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
 
 // registerStack writes a manifest whose compose file actually exists.
 func registerStack(t *testing.T, name string) string {
@@ -48,7 +58,7 @@ func TestListGroupsThreeKinds(t *testing.T) {
 		container("legacy-db-1", "legacy", "/srv/legacy", "db", "running", "Up 2 days"),
 		container("stray", "", "", "", "running", "Up 5 minutes"),
 	}}
-	e := New(fake, io.Discard, io.Discard)
+	e := testEngine(t, fake)
 
 	stacks, err := e.List(t.Context())
 	if err != nil {
@@ -74,7 +84,7 @@ func TestListGroupsThreeKinds(t *testing.T) {
 func TestListShowsStoppedRegisteredStack(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	registerStack(t, "idle")
-	e := New(&runtime.Fake{}, io.Discard, io.Discard)
+	e := testEngine(t, &runtime.Fake{})
 	stacks, err := e.List(t.Context())
 	if err != nil || len(stacks) != 1 {
 		t.Fatalf("stacks=%v err=%v", stacks, err)
@@ -92,7 +102,7 @@ func TestListMatchesRegisteredByWorkingDir(t *testing.T) {
 	fake := &runtime.Fake{Containers: []runtime.Container{
 		container("blog-web-1", "blog", blogDir, "web", "running", "Up 1 hour"),
 	}}
-	e := New(fake, io.Discard, io.Discard)
+	e := testEngine(t, fake)
 	stacks, err := e.List(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +118,7 @@ func TestPsIncludesUnmanaged(t *testing.T) {
 		container("legacy-db-1", "legacy", "/srv/legacy", "db", "running", "Up 2 days"),
 		container("stray", "", "", "", "exited", "Exited (0) 1 day ago"),
 	}}
-	e := New(fake, io.Discard, io.Discard)
+	e := testEngine(t, fake)
 	cs, err := e.Ps(t.Context())
 	if err != nil || len(cs) != 2 {
 		t.Fatalf("cs=%v err=%v", cs, err)
@@ -128,7 +138,7 @@ func TestStatusSingleStack(t *testing.T) {
 	fake := &runtime.Fake{Containers: []runtime.Container{
 		container("blog-web-1", "kazi-blog", blogDir, "web", "running", "Up 1 hour (unhealthy)"),
 	}}
-	e := New(fake, io.Discard, io.Discard)
+	e := testEngine(t, fake)
 	st, err := e.Status(t.Context(), "blog")
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +150,7 @@ func TestStatusSingleStack(t *testing.T) {
 
 func TestStatusNotFound(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
-	e := New(&runtime.Fake{}, io.Discard, io.Discard)
+	e := testEngine(t, &runtime.Fake{})
 	if _, err := e.Status(t.Context(), "ghost"); !errors.Is(err, ErrStackNotFound) {
 		t.Errorf("want ErrStackNotFound, got %v", err)
 	}
@@ -150,7 +160,7 @@ func TestStatusMissingComposePath(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	dir := registerStack(t, "blog")
 	os.Remove(filepath.Join(dir, "docker-compose.yml"))
-	e := New(&runtime.Fake{}, io.Discard, io.Discard)
+	e := testEngine(t, &runtime.Fake{})
 	_, err := e.Status(t.Context(), "blog")
 	if err == nil || !strings.Contains(err.Error(), "no longer exists") {
 		t.Errorf("want actionable missing-path error, got %v", err)
@@ -166,7 +176,7 @@ func TestListOrdersRegisteredFirst(t *testing.T) {
 		container("blog-web-1", "kazi-blog", blogDir, "web", "running", "Up 1 hour"),
 		container("alpha-db-1", "alpha", "/srv/alpha", "db", "running", "Up 2 days"),
 	}}
-	e := New(fake, io.Discard, io.Discard)
+	e := testEngine(t, fake)
 
 	stacks, err := e.List(t.Context())
 	if err != nil {

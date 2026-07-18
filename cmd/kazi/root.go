@@ -53,7 +53,7 @@ func buildEngine() (*engine.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return engine.New(rt, os.Stdout, os.Stderr), nil
+	return engine.New(rt, cfg, os.Stdout, os.Stderr), nil
 }
 
 type envelope struct {

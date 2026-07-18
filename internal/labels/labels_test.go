@@ -17,13 +17,3 @@ func TestParseDockerCSV(t *testing.T) {
 		t.Error("empty input should give empty map")
 	}
 }
-
-func TestOverrideYAML(t *testing.T) {
-	got := string(OverrideYAML("blog", []string{"web", "db"}))
-	want := "services:\n" +
-		"  \"web\":\n    labels:\n      kazi.managed: \"true\"\n      kazi.stack: \"blog\"\n" +
-		"  \"db\":\n    labels:\n      kazi.managed: \"true\"\n      kazi.stack: \"blog\"\n"
-	if got != want {
-		t.Errorf("got:\n%s\nwant:\n%s", got, want)
-	}
-}

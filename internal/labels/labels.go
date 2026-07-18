@@ -3,7 +3,6 @@
 package labels
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -30,16 +29,4 @@ func ParseDockerCSV(s string) map[string]string {
 		m[k] = v
 	}
 	return m
-}
-
-// OverrideYAML renders a compose override file that stamps kazi labels on
-// every service. Passed as an extra -f so label injection stays pure
-// compose spec (portable across docker/podman/nerdctl).
-func OverrideYAML(stack string, services []string) []byte {
-	var b strings.Builder
-	b.WriteString("services:\n")
-	for _, s := range services {
-		fmt.Fprintf(&b, "  %q:\n    labels:\n      %s: \"true\"\n      %s: %q\n", s, Managed, Stack, stack)
-	}
-	return []byte(b.String())
 }

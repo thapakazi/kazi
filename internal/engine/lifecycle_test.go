@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,21 +10,25 @@ import (
 	"github.com/thapakazi/kazi/internal/runtime"
 )
 
+// minimalConfigJSON is a minimal compose config JSON for tests that don't
+// need full routing logic (web service only on default network).
+const minimalConfigJSON = `{"services":{"web":{"networks":{"default":null}}}}`
+
 func TestUpRegisteredInjectsLabels(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	blogDir := registerStack(t, "blog")
-	fake := &runtime.Fake{Services: []string{"web", "db"}}
-	e := New(fake, io.Discard, io.Discard)
+	fake := &runtime.Fake{ConfigJSON: minimalConfigJSON}
+	e := testEngine(t, fake)
 
 	if err := e.Up(t.Context(), "blog"); err != nil {
 		t.Fatal(err)
 	}
-	if len(fake.Calls) != 2 {
+	if len(fake.Calls) < 2 {
 		t.Fatalf("calls = %v", fake.Calls)
 	}
-	// call 0: config --services against the manifest's compose file
+	// call 0: config --format json against the manifest's compose file
 	cfg := fake.Calls[0]
-	if cfg[0] != "kazi-blog" || cfg[1] != blogDir || !slices.Contains(cfg, "config") {
+	if cfg[0] != "kazi-blog" || cfg[1] != blogDir || !slices.Contains(cfg, "config") || !slices.Contains(cfg, "--format") || !slices.Contains(cfg, "json") {
 		t.Errorf("config call = %v", cfg)
 	}
 	// call 1: up -d with original file + override file
@@ -52,12 +55,12 @@ func TestUpReusesExistingProjectName(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	blogDir := registerStack(t, "blog")
 	fake := &runtime.Fake{
-		Services: []string{"web"},
+		ConfigJSON: minimalConfigJSON,
 		Containers: []runtime.Container{
 			container("blog-web-1", "handrolled", blogDir, "web", "running", "Up 1 hour"),
 		},
 	}
-	e := New(fake, io.Discard, io.Discard)
+	e := testEngine(t, fake)
 	if err := e.Up(t.Context(), "blog"); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +76,7 @@ func TestDownDiscoveredStack(t *testing.T) {
 	fake := &runtime.Fake{Containers: []runtime.Container{
 		container("legacy-db-1", "legacy", "/srv/legacy", "db", "running", "Up 2 days"),
 	}}
-	e := New(fake, io.Discard, io.Discard)
+	e := testEngine(t, fake)
 	if err := e.Down(t.Context(), "legacy"); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +93,7 @@ func TestLogsFlags(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	blogDir := registerStack(t, "blog")
 	fake := &runtime.Fake{}
-	e := New(fake, io.Discard, io.Discard)
+	e := testEngine(t, fake)
 	if err := e.Logs(t.Context(), "blog", "web", true, "50"); err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +113,7 @@ func TestRestartRegisteredStack(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	blogDir := registerStack(t, "blog")
 	fake := &runtime.Fake{}
-	e := New(fake, io.Discard, io.Discard)
+	e := testEngine(t, fake)
 	if err := e.Restart(t.Context(), "blog"); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +137,7 @@ func TestUpMissingComposePath(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	dir := registerStack(t, "blog")
 	os.Remove(dir + "/docker-compose.yml")
-	e := New(&runtime.Fake{}, io.Discard, io.Discard)
+	e := testEngine(t, &runtime.Fake{})
 	err := e.Up(t.Context(), "blog")
 	if err == nil || !strings.Contains(err.Error(), "no longer exists") {
 		t.Errorf("want actionable missing-path error, got %v", err)

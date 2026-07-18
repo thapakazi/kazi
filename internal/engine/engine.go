@@ -51,12 +51,13 @@ type StackInfo struct {
 
 type Engine struct {
 	RT  runtime.Runtime
+	Cfg store.Config
 	Out io.Writer // compose stdout passthrough
 	Err io.Writer // compose stderr passthrough
 }
 
-func New(rt runtime.Runtime, out, errW io.Writer) *Engine {
-	return &Engine{RT: rt, Out: out, Err: errW}
+func New(rt runtime.Runtime, cfg store.Config, out, errW io.Writer) *Engine {
+	return &Engine{RT: rt, Cfg: cfg, Out: out, Err: errW}
 }
 
 // target is a resolved stack ready for lifecycle commands.

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/thapakazi/kazi/internal/runtime"
+	"github.com/thapakazi/kazi/internal/store"
 )
 
 // TestComposeLifecycle drives a real compose project end to end against
@@ -26,7 +27,11 @@ func TestComposeLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := New(rt, os.Stdout, os.Stderr)
+	cfg, cfgErr := store.LoadConfig()
+	if cfgErr != nil {
+		t.Fatal(cfgErr)
+	}
+	e := New(rt, cfg, os.Stdout, os.Stderr)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
