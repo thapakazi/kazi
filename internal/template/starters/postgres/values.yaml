@@ -1,0 +1,4 @@
+description: PostgreSQL database
+postgres_tag: 17-alpine
+postgres_password: postgres
+postgres_db: app

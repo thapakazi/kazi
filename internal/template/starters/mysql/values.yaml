@@ -1,0 +1,4 @@
+description: MySQL database
+mysql_tag: "8.4"
+mysql_root_password: root
+mysql_database: app

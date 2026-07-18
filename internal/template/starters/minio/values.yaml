@@ -1,0 +1,4 @@
+description: MinIO object storage
+minio_tag: latest
+minio_root_user: minio
+minio_root_password: minio123

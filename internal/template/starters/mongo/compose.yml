@@ -1,0 +1,14 @@
+services:
+  mongo:
+    image: mongo:${MONGO_TAG:-7}
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --eval 'db.runCommand({ping:1})' --quiet"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    expose:
+      - "27017"
+volumes:
+  mongodata: {}

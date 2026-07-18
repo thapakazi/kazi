@@ -1,0 +1,19 @@
+services:
+  minio:
+    image: minio/minio:${MINIO_TAG:-latest}
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio123}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    expose:
+      - "9000"
+      - "9001"
+volumes:
+  miniodata: {}

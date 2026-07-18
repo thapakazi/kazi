@@ -1,0 +1,11 @@
+services:
+  mailpit:
+    image: axllent/mailpit:${MAILPIT_TAG:-latest}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8025/api/v1/messages || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    expose:
+      - "8025"
+      - "1025"
