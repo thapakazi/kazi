@@ -69,7 +69,7 @@ func TestSyncNoChangeNoReload(t *testing.T) {
 	if err := Sync(t.Context(), f2, routes, true); err != nil { // same routes, proxy now running
 		t.Fatal(err)
 	}
-	if len(f2.Cmds) != 0 && len(f2.Calls) != 0 {
+	if len(f2.Cmds) != 0 || len(f2.Calls) != 0 {
 		t.Errorf("unchanged content must be a no-op: cmds=%v calls=%v", f2.Cmds, f2.Calls)
 	}
 }
@@ -95,11 +95,70 @@ func TestSyncValidateFailureKeepsOldConfig(t *testing.T) {
 func TestSyncNoRoutesIdleProxyStaysDown(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	f := &runtime.Fake{}
+	// Pre-write a sentinel compose.yml to verify it is NOT overwritten.
+	composeFile := filepath.Join(Dir(), "compose.yml")
+	if err := os.MkdirAll(Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := "# sentinel — must not be overwritten\n"
+	if err := os.WriteFile(composeFile, []byte(sentinel), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := Sync(t.Context(), f, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.Calls) != 0 {
 		t.Errorf("no routes + proxy down ⇒ never start it: %v", f.Calls)
+	}
+	// compose.yml must not have been overwritten by EnsureStackFiles.
+	got, err := os.ReadFile(composeFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != sentinel {
+		t.Errorf("compose.yml was overwritten; got:\n%s", got)
+	}
+}
+
+// TestSyncRestartsCrashedProxy verifies that unchanged content + routes exist +
+// proxy NOT running still results in a compose up call (crashed-proxy recovery),
+// but does NOT call validate or reload (caddy reads the Caddyfile at startup).
+func TestSyncRestartsCrashedProxy(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	routes := []Route{{Stack: "blog", Service: "web", Hostname: "blog.localhost", Alias: "web.blog", Port: 80}}
+
+	// First Sync: normal start path writes files and brings proxy up.
+	f1 := &runtime.Fake{}
+	if err := Sync(t.Context(), f1, routes, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second Sync: same routes (content unchanged), proxy NOT running (simulates crash).
+	f2 := &runtime.Fake{}
+	if err := Sync(t.Context(), f2, routes, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Must record a compose up call for the proxy.
+	upSeen := false
+	for _, c := range f2.Calls {
+		if c[0] == StackName && strings.Contains(strings.Join(c, " "), "up -d") {
+			upSeen = true
+		}
+	}
+	if !upSeen {
+		t.Errorf("crashed proxy must be restarted: calls=%v", f2.Calls)
+	}
+
+	// Must NOT call validate or reload (content unchanged; caddy reads file at startup).
+	for _, c := range f2.Cmds {
+		joined := strings.Join(c, " ")
+		if strings.Contains(joined, "caddy validate") {
+			t.Errorf("unexpected caddy validate on unchanged content: %v", f2.Cmds)
+		}
+		if strings.Contains(joined, "caddy reload") {
+			t.Errorf("unexpected caddy reload on unchanged content: %v", f2.Cmds)
+		}
 	}
 }
 

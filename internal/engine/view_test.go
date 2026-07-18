@@ -11,17 +11,6 @@ import (
 	"github.com/thapakazi/kazi/internal/store"
 )
 
-// testConfig returns a Config with seeded defaults for use in tests that
-// don't need the testEngine helper (e.g. when passing runtime.Fake inline).
-func testConfig(t *testing.T) store.Config {
-	t.Helper()
-	cfg, err := store.LoadConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return cfg
-}
-
 // registerStack writes a manifest whose compose file actually exists.
 func registerStack(t *testing.T, name string) string {
 	t.Helper()

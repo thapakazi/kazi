@@ -257,12 +257,6 @@ func (e *Engine) frame(err error, verb, stack string) error {
 	return fmt.Errorf("`%s compose %s` failed for stack %q: %w", e.RT.Name(), verb, stack, err)
 }
 
-// stackPlan holds the routing plan for one stack (used in syncProxy).
-type stackPlan struct {
-	name string
-	plan proxy.Plan
-}
-
 // syncProxy recomputes desired routes across ALL stacks and drives the
 // Caddyfile generate→validate→reload loop. It NEVER returns an error:
 // failures are written as warnings to e.Err.
