@@ -118,15 +118,26 @@ func Sync(ctx context.Context, rt runtime.Runtime, routes []Route, proxyRunning 
 		return err
 	}
 
-	// Step 5: proxy not running → compose up -d
+	// Step 5: proxy not running → attempt compose up -d.
 	if !proxyRunning {
+		// Write the desired Caddyfile to disk before starting the proxy.
+		// This ensures the config is persisted even if compose up fails
+		// (e.g. ports 80/443 already bound on the host).  Caddy reads this
+		// file at startup, so if unchanged we can return immediately after a
+		// successful up; if changed we fall through to validate+reload.
+		if !unchanged {
+			if err := os.WriteFile(caddyPath, desired, 0o644); err != nil {
+				return fmt.Errorf("writing Caddyfile: %w", err)
+			}
+		}
 		cmd := rt.ComposeCmd(ctx, StackName, Dir(), nil, "up", "-d")
 		if _, err := compose.Output(cmd); err != nil {
 			return fmt.Errorf("starting kazi-proxy: %w", err)
 		}
-		// Content is already on disk (unchanged) or about to be written.
-		// If unchanged, caddy will read the current Caddyfile at startup — no
-		// validate/reload needed. If changed, fall through to do both.
+		// Content is already on disk (unchanged) or was just written (changed).
+		// Caddy reads the Caddyfile at startup — no validate/reload needed.
+		// If content changed we still need to reload a live caddy, so fall
+		// through when unchanged only.
 		if unchanged {
 			return nil
 		}
