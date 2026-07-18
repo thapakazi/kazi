@@ -23,21 +23,42 @@ type Manifest struct {
 }
 
 type Metadata struct {
-	Name string `yaml:"name"`
+	Name      string `yaml:"name"`
+	CreatedAt string `yaml:"createdAt,omitempty"` // RFC3339, set at registration
 }
 
 type Spec struct {
-	Source Source       `yaml:"source"`
-	Proxy  *ProxySpec   `yaml:"proxy,omitempty"`
-	Expose []ExposeSpec `yaml:"expose,omitempty"`
-	System bool         `yaml:"system,omitempty"` // system stacks (kazi-proxy): protected from rm
+	Source    Source            `yaml:"source"`
+	Proxy     *ProxySpec        `yaml:"proxy,omitempty"`
+	Expose    []ExposeSpec      `yaml:"expose,omitempty"`
+	System    bool              `yaml:"system,omitempty"`    // system stacks (kazi-proxy): protected from rm
+	Ephemeral bool              `yaml:"ephemeral,omitempty"` // gc reclaims when true
+	Values    map[string]string `yaml:"values,omitempty"`    // --set overrides / run -e env
+	Volumes   []string          `yaml:"volumes,omitempty"`   // run -v entries ("vol:/path")
 }
 
-// Source is a union: exactly one arm set. compose is the only arm
-// implemented in M0; image and template are reserved for M2 — do not add
-// fields here without a spec update.
+// Source is a union: exactly one arm set.
 type Source struct {
-	Compose string `yaml:"compose,omitempty"`
+	Compose    string   `yaml:"compose,omitempty"`
+	Image      string   `yaml:"image,omitempty"`      // ad-hoc: kazi run
+	Template   string   `yaml:"template,omitempty"`   // try-stacks: catalog template name
+	Containers []string `yaml:"containers,omitempty"` // adopted container names
+}
+
+// Kind returns "compose"|"image"|"template"|"containers"|"" based on which arm is set.
+func (s Source) Kind() string {
+	switch {
+	case s.Compose != "":
+		return "compose"
+	case s.Image != "":
+		return "image"
+	case s.Template != "":
+		return "template"
+	case len(s.Containers) > 0:
+		return "containers"
+	default:
+		return ""
+	}
 }
 
 // ProxySpec configures the reverse-proxy routing for a stack.
@@ -59,10 +80,16 @@ type Config struct {
 	Spec       ConfigSpec `yaml:"spec"`
 }
 
+// CleanupConfig controls gc behaviour.
+type CleanupConfig struct {
+	EphemeralTTL string `yaml:"ephemeralTTL,omitempty"` // default "24h"
+}
+
 type ConfigSpec struct {
-	Runtime string      `yaml:"runtime"`         // auto | docker | podman | nerdctl
-	Proxy   ProxyConfig `yaml:"proxy,omitempty"` // port-forwarding allowlists
-	Ports   PortsConfig `yaml:"ports,omitempty"` // ephemeral port range
+	Runtime string        `yaml:"runtime"`           // auto | docker | podman | nerdctl
+	Proxy   ProxyConfig   `yaml:"proxy,omitempty"`   // port-forwarding allowlists
+	Ports   PortsConfig   `yaml:"ports,omitempty"`   // ephemeral port range
+	Cleanup CleanupConfig `yaml:"cleanup,omitempty"` // gc policy
 }
 
 // ProxyConfig lists which well-known ports the proxy should forward.
@@ -105,6 +132,9 @@ func applyDefaults(c *Config) {
 	}
 	if c.Spec.Ports.Range == "" {
 		c.Spec.Ports.Range = DefaultPortRange
+	}
+	if c.Spec.Cleanup.EphemeralTTL == "" {
+		c.Spec.Cleanup.EphemeralTTL = "24h"
 	}
 }
 

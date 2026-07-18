@@ -199,3 +199,116 @@ func TestIsDNSLabel(t *testing.T) {
 		}
 	}
 }
+
+// M2 tests ---------------------------------------------------------------
+
+func TestSourceKind(t *testing.T) {
+	cases := []struct {
+		src  Source
+		want string
+	}{
+		{Source{Compose: "/x/compose.yml"}, "compose"},
+		{Source{Image: "nginx:latest"}, "image"},
+		{Source{Template: "postgres"}, "template"},
+		{Source{Containers: []string{"my-container"}}, "containers"},
+		{Source{}, ""},
+	}
+	for _, tc := range cases {
+		if got := tc.src.Kind(); got != tc.want {
+			t.Errorf("Source%+v.Kind() = %q, want %q", tc.src, got, tc.want)
+		}
+	}
+}
+
+func TestM2ManifestRoundTrip(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	m := Manifest{APIVersion: "kazi.dev/v1alpha1", Kind: "Stack"}
+	m.Metadata.Name = "trybox"
+	m.Metadata.CreatedAt = "2026-07-17T10:00:00Z"
+	m.Spec.Source = Source{Image: "nginx:latest"}
+	m.Spec.Ephemeral = true
+	m.Spec.Values = map[string]string{"PORT": "8080", "DEBUG": "true"}
+	m.Spec.Volumes = []string{"data:/data", "logs:/logs"}
+	// M0/M1 fields
+	m.Spec.System = false
+	m.Spec.Proxy = nil
+	m.Spec.Expose = nil
+
+	if err := SaveStack(m); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadStack("trybox")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Metadata.CreatedAt != "2026-07-17T10:00:00Z" {
+		t.Errorf("createdAt = %q, want 2026-07-17T10:00:00Z", got.Metadata.CreatedAt)
+	}
+	if got.Spec.Source.Kind() != "image" {
+		t.Errorf("source.Kind() = %q, want image", got.Spec.Source.Kind())
+	}
+	if got.Spec.Source.Image != "nginx:latest" {
+		t.Errorf("source.image = %q, want nginx:latest", got.Spec.Source.Image)
+	}
+	if !got.Spec.Ephemeral {
+		t.Error("ephemeral lost on round-trip")
+	}
+	if len(got.Spec.Values) != 2 || got.Spec.Values["PORT"] != "8080" {
+		t.Errorf("values = %v", got.Spec.Values)
+	}
+	if len(got.Spec.Volumes) != 2 || got.Spec.Volumes[0] != "data:/data" {
+		t.Errorf("volumes = %v", got.Spec.Volumes)
+	}
+	// M0/M1 fields untouched
+	if got.Spec.Proxy != nil {
+		t.Errorf("proxy should be nil, got %+v", got.Spec.Proxy)
+	}
+	if got.Spec.Expose != nil {
+		t.Errorf("expose should be nil, got %+v", got.Spec.Expose)
+	}
+}
+
+// Extend M0 manifest validation: new M2 keys must stay absent from plain manifests.
+func TestM0ManifestNewKeysBanned(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	if err := SaveStack(testManifest("plain2", "/x/compose.yml")); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(Root(), "stacks", "plain2.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, banned := range []string{"ephemeral", "values", "volumes", "createdAt"} {
+		if strings.Contains(string(b), banned) {
+			t.Errorf("empty %s should be omitted from plain manifest:\n%s", banned, b)
+		}
+	}
+}
+
+func TestCleanupTTLDefault(t *testing.T) {
+	// Absent config file => EphemeralTTL seeded to "24h".
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Spec.Cleanup.EphemeralTTL != "24h" {
+		t.Errorf("absent config: EphemeralTTL = %q, want 24h", cfg.Spec.Cleanup.EphemeralTTL)
+	}
+
+	// Partial file (only runtime set) => EphemeralTTL still seeded.
+	dir := t.TempDir()
+	t.Setenv("KAZI_CONFIG_DIR", dir)
+	partial := "apiVersion: kazi.dev/v1alpha1\nkind: Config\nspec:\n  runtime: docker\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(partial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg2, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.Spec.Cleanup.EphemeralTTL != "24h" {
+		t.Errorf("partial config: EphemeralTTL = %q, want 24h", cfg2.Spec.Cleanup.EphemeralTTL)
+	}
+}
