@@ -157,6 +157,32 @@ func TestStatusMissingComposePath(t *testing.T) {
 	}
 }
 
+// TestListOrdersRegisteredFirst verifies that List() returns registered stacks
+// before discovered stacks, regardless of their alphabetical order.
+func TestListOrdersRegisteredFirst(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	blogDir := registerStack(t, "blog")
+	fake := &runtime.Fake{Containers: []runtime.Container{
+		container("blog-web-1", "kazi-blog", blogDir, "web", "running", "Up 1 hour"),
+		container("alpha-db-1", "alpha", "/srv/alpha", "db", "running", "Up 2 days"),
+	}}
+	e := New(fake, io.Discard, io.Discard)
+
+	stacks, err := e.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stacks) != 2 {
+		t.Fatalf("want 2 stacks, got %d: %+v", len(stacks), stacks)
+	}
+	if stacks[0].Kind != KindRegistered {
+		t.Errorf("stacks[0] kind = %q, want registered; order = %v", stacks[0].Kind, stacks)
+	}
+	if stacks[1].Kind != KindDiscovered {
+		t.Errorf("stacks[1] kind = %q, want discovered; order = %v", stacks[1].Kind, stacks)
+	}
+}
+
 func TestHealthOf(t *testing.T) {
 	cases := map[string]string{
 		"Up 3 hours (healthy)":           "healthy",

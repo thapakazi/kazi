@@ -89,6 +89,10 @@ func (e *Engine) resolve(ctx context.Context, name string) (target, error) {
 		if psErr != nil {
 			return target{}, psErr
 		}
+		// kazi assumes at most one registered stack per working directory.
+		// Two manifests pointing at the same dir would both reuse the same live
+		// project here (tracked for a future milestone; snapshot()'s claimed map
+		// guards the view side of this assumption).
 		for _, c := range cs {
 			if c.Labels[labels.ComposeWorkingDir] == t.dir && c.Labels[labels.ComposeProject] != "" {
 				t.project = c.Labels[labels.ComposeProject]

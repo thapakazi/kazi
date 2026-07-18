@@ -57,6 +57,9 @@ type CLI struct {
 func (c *CLI) Name() string { return c.Bin }
 
 func (c *CLI) Ps(ctx context.Context) ([]Container, error) {
+	// --no-trunc is added beyond the spec's `ps -a --format json` to get full
+	// container IDs and untruncated label values; truncated label CSV would
+	// break key=value parsing (a label value containing "," would be cut off).
 	cmd := exec.CommandContext(ctx, c.Bin, "ps", "-a", "--no-trunc", "--format", "json")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

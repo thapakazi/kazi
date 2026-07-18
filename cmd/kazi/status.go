@@ -44,12 +44,8 @@ var statusCmd = &cobra.Command{
 		}
 		w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
 		fmt.Fprintln(w, "NAME\tKIND\tSTATUS\tPATH")
-		for _, kind := range []engine.Kind{engine.KindRegistered, engine.KindDiscovered} {
-			for _, s := range stacks {
-				if s.Kind == kind {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", s.Name, s.Kind, statusCell(s), s.Dir)
-				}
-			}
+		for _, s := range stacks {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", s.Name, s.Kind, statusCell(s), s.Dir)
 		}
 		return w.Flush()
 	},

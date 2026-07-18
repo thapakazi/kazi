@@ -80,9 +80,14 @@ func (e *Engine) snapshot(ctx context.Context) ([]StackInfo, []ContainerInfo, er
 		si.Running, si.Total = tally(si.Containers)
 		stacks = append(stacks, si)
 	}
+	// Sort by priority rank (registered=0, discovered=1, unmanaged=2) then
+	// by name within each tier. Alphabetical Kind ordering is wrong:
+	// "discovered" < "registered" < "unmanaged" would put discovered first.
+	kindRank := map[Kind]int{KindRegistered: 0, KindDiscovered: 1, KindUnmanaged: 2}
 	sort.Slice(stacks, func(i, j int) bool {
-		if stacks[i].Kind != stacks[j].Kind {
-			return stacks[i].Kind < stacks[j].Kind // discovered < registered < unmanaged (alphabetical is fine)
+		ri, rj := kindRank[stacks[i].Kind], kindRank[stacks[j].Kind]
+		if ri != rj {
+			return ri < rj
 		}
 		return stacks[i].Name < stacks[j].Name
 	})
