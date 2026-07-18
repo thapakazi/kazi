@@ -93,7 +93,7 @@ func TestParseRange(t *testing.T) {
 	if err != nil || lo != 42000 || hi != 42999 {
 		t.Errorf("lo=%d hi=%d err=%v", lo, hi, err)
 	}
-	for _, bad := range []string{"", "x-y", "42000", "42999-42000"} {
+	for _, bad := range []string{"", "x-y", "42000", "42999-42000", "0-100", "42000-70000"} {
 		if _, _, err := ParseRange(bad); err == nil {
 			t.Errorf("ParseRange(%q) should fail", bad)
 		}

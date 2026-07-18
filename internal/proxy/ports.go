@@ -73,17 +73,22 @@ func (s *PortState) Lookup(stack, service string) (Allocation, bool) {
 // portFree reports whether the port is available to bind on the host.
 // We probe both 0.0.0.0 and 127.0.0.1 so that a listener on either
 // interface is detected as busy.
+//
+// Both listeners are opened before either is closed to shrink the TOCTOU
+// window. On darwin (and Linux) binding 127.0.0.1:p while :p is held by
+// ln1 succeeds — the dual-hold is safe. ln2 closing after ln1 is intentional:
+// we defer ln1.Close() only after ln2's error is captured so the window
+// between the two binds is zero.
 func portFree(p int) bool {
-	addr := fmt.Sprintf(":%d", p)
-	ln, err := net.Listen("tcp", addr)
+	ln1, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
 	if err != nil {
 		return false
 	}
-	ln.Close()
 	// Also probe on loopback to catch listeners bound to 127.0.0.1 only.
-	addr4 := fmt.Sprintf("127.0.0.1:%d", p)
-	ln2, err2 := net.Listen("tcp", addr4)
-	if err2 != nil {
+	// ln1 is kept open until after ln2 bind attempt to avoid TOCTOU.
+	ln2, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
+	ln1.Close()
+	if err != nil {
 		return false
 	}
 	ln2.Close()
@@ -107,7 +112,7 @@ func (s *PortState) allocatedPorts() map[int]bool {
 // after conflict and host-busy checks.
 func (s *PortState) Allocate(stack, service string, containerPort, pinned, lo, hi int) (int, error) {
 	// Look for an existing allocation for this exact key.
-	for i, a := range s.Allocations {
+	for _, a := range s.Allocations {
 		if a.Stack == stack && a.Service == service && a.ContainerPort == containerPort {
 			if pinned == 0 || a.HostPort == pinned {
 				// Idempotent: same pin (or auto) — return existing.
@@ -115,7 +120,6 @@ func (s *PortState) Allocate(stack, service string, containerPort, pinned, lo, h
 			}
 			// Caller wants to re-pin to a different port; fall through to
 			// conflict / busy checks then update.
-			_ = i
 			break
 		}
 	}
@@ -220,6 +224,9 @@ func ParseRange(r string) (lo, hi int, err error) {
 	}
 	if lo >= hi {
 		return 0, 0, fmt.Errorf("invalid port range %q: lo must be less than hi", r)
+	}
+	if lo < 1 || hi > 65535 {
+		return 0, 0, fmt.Errorf("invalid port range %q: ports must be within 1-65535", r)
 	}
 	return lo, hi, nil
 }

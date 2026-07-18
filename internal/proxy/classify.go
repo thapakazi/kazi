@@ -5,6 +5,7 @@
 package proxy
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/thapakazi/kazi/internal/compose"
@@ -121,7 +122,7 @@ func BuildPlan(stack string, decl *store.ProxySpec, svcs []compose.ServiceInfo, 
 		}
 		if _, ok := httpPort[decl.Service]; !ok { // declared but unclassifiable: trust the declaration only with a port
 			plan.Primary = ""
-		} else if !contains(httpSvcs, decl.Service) {
+		} else if !slices.Contains(httpSvcs, decl.Service) {
 			httpSvcs = append(httpSvcs, decl.Service)
 			sort.Strings(httpSvcs)
 		}
@@ -146,11 +147,3 @@ func BuildPlan(stack string, decl *store.ProxySpec, svcs []compose.ServiceInfo, 
 	return plan
 }
 
-func contains(ss []string, s string) bool {
-	for _, x := range ss {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
