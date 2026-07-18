@@ -43,6 +43,7 @@ var statusCmd = &cobra.Command{
 			return printEnvelope("StackStatusList", stacks)
 		}
 		w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "NAME\tKIND\tSTATUS\tPATH")
 		for _, kind := range []engine.Kind{engine.KindRegistered, engine.KindDiscovered} {
 			for _, s := range stacks {
 				if s.Kind == kind {

@@ -52,3 +52,22 @@ func TestExactArgsWrapsUsage(t *testing.T) {
 		t.Errorf("want nil, got %v", err)
 	}
 }
+
+func TestRangeArgsWrapsUsage(t *testing.T) {
+	cases := []struct {
+		n    int
+		want bool // want ErrUsage
+	}{
+		{0, true},
+		{1, false},
+		{2, false},
+		{3, true},
+	}
+	for _, c := range cases {
+		args := make([]string, c.n)
+		err := rangeArgs(1, 2)(nil, args)
+		if got := errors.Is(err, ErrUsage); got != c.want {
+			t.Errorf("rangeArgs(1,2) with %d args: err=%v, want ErrUsage=%v", c.n, err, c.want)
+		}
+	}
+}
