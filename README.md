@@ -124,6 +124,70 @@ keychain by default. To trust kazi's CA in Firefox:
 
 ---
 
+## Instant databases & scratch containers
+
+Spin up a throwaway service from the built-in catalog — no compose file, no
+manifest to write:
+
+```sh
+# Bring up postgres in the foreground; Ctrl-C tears it down completely.
+kazi try postgres
+
+# Override a default value from the template.
+kazi try postgres --set postgres_password=secret
+
+# Detach for scripts/agents; reclaim later with `kazi gc`.
+kazi try redis -d
+
+# Decide you want to keep it — flips the manifest, never recreates containers.
+kazi keep redis                 # or: kazi try redis --keep
+```
+
+`try` resolves a catalog template, starts it as an **ephemeral** stack (routed
+just like any other — `https://postgres.localhost`), and on exit runs a full
+`down -v --rmi local`, frees ports, deletes the manifest, and reloads the
+proxy. **Zero residue.** The catalog ships offline with `postgres`, `redis`,
+`mysql`, `mongo`, `mailpit`, and `minio`, materialized to
+`~/.config/kazi/templates/` on first use so you can edit them.
+
+```sh
+kazi template ls                        # list the catalog with descriptions
+kazi template new pg19 --from-image postgres:19   # scaffold from any image, opens $EDITOR
+kazi template import ./awesome-compose/postgresql # import a dir or git URL
+kazi template reset postgres            # restore an embedded starter to pristine
+kazi eject postgres ./pg [--add]        # graduate a template to a real project dir
+```
+
+### Ad-hoc & adopted containers
+
+```sh
+# Run any image as a persistent, routed stack — no compose file generated.
+kazi run traefik/whoami --name hello -p 8080:80 -e KEY=val
+
+# Group hand-run containers into a stack without recreating them.
+kazi adopt mydb pg-container redis-container
+```
+
+`run` creates an image-backed stack (`up`=create/start, `down`=stop); `adopt`
+is manifest-membership only — adopted containers are never recreated or
+relabeled, and `kazi rm` removes just the manifest.
+
+### Garbage collection
+
+```sh
+kazi gc --dry-run    # show what would be reclaimed
+kazi gc              # confirm, then reclaim
+kazi gc --yes        # reclaim without confirmation (for automation)
+```
+
+`gc` reclaims stopped or TTL-expired ephemeral stacks (full teardown including
+volumes), orphaned containers left by a crashed `try -d` (found via the
+`kazi.ephemeral` crash-hint label), and stale port allocations. The TTL comes
+from `spec.cleanup.ephemeralTTL` (default `24h`). `kazi status` counts
+reclaimable debris as a nudge.
+
+---
+
 ## Shell integration
 
 Add one line to `~/.zshrc` (or `~/.bashrc`) to get the `kj` function that jumps to a stack's project directory:
@@ -159,6 +223,13 @@ kj blog    # cd into blog's project directory
 | `kazi trust [--uninstall]` | Install (or remove) kazi's local CA into the system trust store. Run once after first `kazi up`. |
 | `kazi jump <stack> --print` | Print the stack's project directory (used internally by `kj`). |
 | `kazi shell-init` | Emit the `kj` shell function for eval in your shell RC file. |
+| `kazi try <template> [--keep] [-d] [--set k=v]` | Bring up a catalog template as an ephemeral stack. Foreground tears down on Ctrl-C (zero residue); `-d` detaches; `--keep` makes it persistent. Supports `--json`. |
+| `kazi keep <stack>` | Flip an ephemeral stack to persistent — edits the manifest only, never recreates containers. |
+| `kazi run <image> [--name n] [-p\|-e\|-v ...]` | Create a persistent, routed, image-backed stack and start it — no compose file generated. Supports `--json`. |
+| `kazi adopt <name> <container>...` | Group already-running containers into a stack by membership; never recreates or relabels them. Supports `--json`. |
+| `kazi gc [--dry-run] [--yes]` | Reclaim stopped/expired ephemeral stacks, crash-orphaned containers, and stale port allocations. Confirms unless `--yes`. Supports `--json`. |
+| `kazi eject <template> [dir] [--add]` | Copy a template's compose + current values into a real project dir; `--add` registers it. Supports `--json`. |
+| `kazi template ls\|new\|import\|reset` | Manage the catalog: list, scaffold from an image (`new --from-image`), import a dir/git URL, or reset an embedded starter. `ls` supports `--json`. |
 
 Lifecycle verbs (`up/down/restart/logs/status`) work on **auto-discovered** compose stacks (containers with `com.docker.compose.project` labels) exactly as on registered ones — no import step required.
 
@@ -190,6 +261,8 @@ spec:
     tcpPorts:  [1521, 3306, 5432, 5672, 6379, 9092, 27017]      # ports classified as TCP/db
   ports:
     range: "42000-42999"   # host-port range for kazi expose allocations
+  cleanup:
+    ephemeralTTL: "24h"    # kazi gc reclaims ephemeral stacks older than this
 ```
 
 All fields have sensible defaults and the file is optional.
@@ -212,12 +285,18 @@ spec:
       port: auto     # "auto" picks a free port in spec.ports.range; or give a number
 ```
 
+`spec.source` is a union — besides `compose:`, a stack may be backed by
+`image:` (`kazi run`), `template:` (`kazi try`), or `containers:` (`kazi
+adopt`). Ephemeral `try` stacks also carry `spec.ephemeral: true` and any
+`--set` overrides under `spec.values`.
+
 **Managed paths under `~/.config/kazi/`:**
 
 | Path | Contents |
 |---|---|
 | `config.yaml` | Global config (runtime, proxy port lists, range) |
 | `stacks/<name>.yaml` | One manifest per registered stack |
+| `templates/<name>/` | Catalog templates (embedded starters materialized on first use + imports) |
 | `proxy/compose.yml` | Generated Caddy compose file (do not edit) |
 | `proxy/Caddyfile` | Generated routing config (do not edit) |
 | `state/ports.yaml` | Port allocation ledger for `kazi expose` |
