@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 
@@ -136,6 +137,8 @@ func (e *Engine) Ps(ctx context.Context) ([]ContainerInfo, error) {
 }
 
 // Status returns per-service detail for one stack.
+// For registered stacks, it verifies the manifest's compose file still exists
+// on disk and returns an actionable error if it does not.
 func (e *Engine) Status(ctx context.Context, name string) (StackInfo, error) {
 	stacks, _, err := e.snapshot(ctx)
 	if err != nil {
@@ -143,6 +146,16 @@ func (e *Engine) Status(ctx context.Context, name string) (StackInfo, error) {
 	}
 	for _, s := range stacks {
 		if s.Name == name {
+			if s.Kind == KindRegistered {
+				m, loadErr := store.LoadStack(name)
+				if loadErr == nil {
+					composePath := m.Spec.Source.Compose
+					if _, statErr := os.Stat(composePath); statErr != nil {
+						return StackInfo{}, fmt.Errorf("stack %q manifest points at %s, which no longer exists; fix the path or `kazi rm %s`",
+							name, composePath, name)
+					}
+				}
+			}
 			return s, nil
 		}
 	}

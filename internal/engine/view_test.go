@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/thapakazi/kazi/internal/runtime"
@@ -92,7 +93,10 @@ func TestListMatchesRegisteredByWorkingDir(t *testing.T) {
 		container("blog-web-1", "blog", blogDir, "web", "running", "Up 1 hour"),
 	}}
 	e := New(fake, io.Discard, io.Discard)
-	stacks, _ := e.List(t.Context())
+	stacks, err := e.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(stacks) != 1 || stacks[0].Kind != KindRegistered || stacks[0].Project != "blog" {
 		t.Errorf("stacks = %+v", stacks)
 	}
@@ -139,6 +143,17 @@ func TestStatusNotFound(t *testing.T) {
 	e := New(&runtime.Fake{}, io.Discard, io.Discard)
 	if _, err := e.Status(t.Context(), "ghost"); !errors.Is(err, ErrStackNotFound) {
 		t.Errorf("want ErrStackNotFound, got %v", err)
+	}
+}
+
+func TestStatusMissingComposePath(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	dir := registerStack(t, "blog")
+	os.Remove(filepath.Join(dir, "docker-compose.yml"))
+	e := New(&runtime.Fake{}, io.Discard, io.Discard)
+	_, err := e.Status(t.Context(), "blog")
+	if err == nil || !strings.Contains(err.Error(), "no longer exists") {
+		t.Errorf("want actionable missing-path error, got %v", err)
 	}
 }
 
