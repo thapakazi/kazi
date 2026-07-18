@@ -1,0 +1,8 @@
+services:
+  web:
+    image: traefik/whoami   # same service name as m1a — routing must not collide
+    expose:
+      - "80"
+  db:
+    image: alpine:3.20
+    command: sleep 300
