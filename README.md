@@ -151,6 +151,7 @@ kj blog    # cd into blog's project directory
 | `kazi down <stack>` | Run `compose down`. Routes for this stack are removed from the proxy. |
 | `kazi restart <stack>` | Run `compose restart`. |
 | `kazi status [<stack>]` | No arg: global dashboard grouped by kind. With arg: per-service state, health, and published ports. Supports `--json`. |
+| `kazi describe <stack>` (or `-s <stack>`) | Everything about one stack: status, manifest declarations, services, endpoints. Supports `--json`. |
 | `kazi logs <stack> [service]` | Passthrough to `compose logs`; supports `-f/--follow` and `--tail N`. |
 | `kazi ps` | Every container on the runtime (including unmanaged), annotated with stack and kind. Supports `--json`. |
 | `kazi urls [<stack>]` | List all reachable endpoints: HTTPS URLs for HTTP services, `localhost:PORT` for TCP. Supports `--json`. |
