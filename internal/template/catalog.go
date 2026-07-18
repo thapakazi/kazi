@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -21,6 +22,12 @@ import (
 
 //go:embed all:starters
 var embeddedStarters embed.FS
+
+// embeddedMarker is a sentinel file written into every materialized embedded
+// starter directory. Its presence distinguishes a kazi-materialized copy from
+// a user-imported directory that happens to share the same name.
+// Import never writes this file, so Reset can refuse to overwrite imported content.
+const embeddedMarker = ".kazi-embedded"
 
 // Info describes a template in the catalog.
 type Info struct {
@@ -51,7 +58,7 @@ func List() ([]Info, error) {
 			continue
 		}
 		name := e.Name()
-		desc, _, err := loadValuesFromFS(embeddedStarters, filepath.Join("starters", name))
+		desc, _, err := loadValuesFromFS(embeddedStarters, path.Join("starters", name))
 		if err != nil {
 			desc = ""
 		}
@@ -64,6 +71,10 @@ func List() ([]Info, error) {
 	}
 
 	// On-disk templates under Dir() override embedded ones for same name.
+	// A disk entry is only considered Embedded when it contains the
+	// embeddedMarker file — meaning kazi materialized it. An imported dir
+	// that happens to share a name with an embedded starter will NOT have
+	// the marker and is therefore treated as non-embedded (Embedded=false).
 	diskDir := Dir()
 	diskEntries, err := os.ReadDir(diskDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -79,12 +90,14 @@ func List() ([]Info, error) {
 		if err != nil {
 			desc = ""
 		}
-		existing, isEmbedded := byName[name]
+		// Only count this disk entry as Embedded if the marker is present.
+		_, markerErr := os.Stat(filepath.Join(tplPath, embeddedMarker))
+		isMarked := markerErr == nil
 		byName[name] = Info{
 			Name:        name,
 			Description: desc,
 			Path:        tplPath,
-			Embedded:    isEmbedded && existing.Embedded,
+			Embedded:    isMarked,
 		}
 	}
 
@@ -108,7 +121,7 @@ func Materialize(name string) (string, error) {
 	}
 
 	// Verify this is a known embedded starter.
-	embeddedPath := filepath.Join("starters", name)
+	embeddedPath := path.Join("starters", name)
 	if _, err := embeddedStarters.ReadDir(embeddedPath); err != nil {
 		available := embeddedNames()
 		return "", fmt.Errorf("unknown template %q; available embedded starters: %s", name, strings.Join(available, ", "))
@@ -117,39 +130,47 @@ func Materialize(name string) (string, error) {
 	if err := copyEmbedDir(embeddedPath, dest); err != nil {
 		return "", fmt.Errorf("materializing template %q: %w", name, err)
 	}
+	// Write the embedded marker so List() and Reset() can distinguish this
+	// kazi-materialized copy from a user-imported directory with the same name.
+	markerPath := filepath.Join(dest, embeddedMarker)
+	if err := os.WriteFile(markerPath, []byte("kazi-embedded\n"), 0o644); err != nil {
+		_ = os.RemoveAll(dest) // roll back on marker failure
+		return "", fmt.Errorf("materializing template %q: writing marker: %w", name, err)
+	}
 	return dest, nil
 }
 
 // Reset deletes the on-disk directory for an embedded template and
 // re-materializes the pristine embedded copy. Non-embedded (imported)
 // templates and unknown names return errors.
+//
+// Safety invariant: Reset refuses when the on-disk directory exists but does
+// NOT contain the embeddedMarker file. That marker is only written by
+// Materialize; Import never writes it. This prevents Reset from silently
+// overwriting user-imported content that happens to share the name of an
+// embedded starter.
 func Reset(name string) error {
 	// Check it is a known embedded starter.
-	embeddedPath := filepath.Join("starters", name)
+	embeddedPath := path.Join("starters", name)
 	if _, err := embeddedStarters.ReadDir(embeddedPath); err != nil {
 		return fmt.Errorf("reset: %q is not a known embedded starter", name)
 	}
 
-	// Verify it hasn't been imported as a non-embedded template (no collision).
-	// If the disk path exists, we still allow reset for embedded templates.
-	// For non-embedded, the starter dir would not exist — but user may have
-	// imported a dir with the same name. We detect this by checking List().
-	infos, err := List()
-	if err != nil {
-		return err
-	}
-	for _, info := range infos {
-		if info.Name == name && !info.Embedded {
-			return fmt.Errorf("reset: %q is not an embedded template; use 'kazi template import' to manage it", name)
+	dest := filepath.Join(Dir(), name)
+
+	// If the directory exists, verify it was materialized by kazi (marker present).
+	// If the marker is absent the directory arrived via Import — refuse to overwrite it.
+	if _, err := os.Stat(dest); err == nil {
+		if _, markerErr := os.Stat(filepath.Join(dest, embeddedMarker)); markerErr != nil {
+			return fmt.Errorf("reset: %q exists on disk without the embedded marker; it was imported, not materialized — use 'kazi template import' to manage it", name)
 		}
 	}
 
-	dest := filepath.Join(Dir(), name)
 	// Remove existing directory.
 	if err := os.RemoveAll(dest); err != nil {
 		return fmt.Errorf("reset: removing %s: %w", dest, err)
 	}
-	// Re-materialize.
+	// Re-materialize (also writes the marker).
 	if _, err := Materialize(name); err != nil {
 		return fmt.Errorf("reset: re-materializing %q: %w", name, err)
 	}
@@ -179,7 +200,7 @@ func Import(src, name string) (Info, error) {
 		defer os.RemoveAll(tmp)
 
 		cmd := exec.Command("git", "clone", "--depth", "1", src, tmp)
-		cmd.Stdout = os.Stderr
+		cmd.Stdout = io.Discard // clone progress is noise; only surface errors
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			return Info{}, fmt.Errorf("import: git clone %s: %w", src, err)
@@ -296,8 +317,10 @@ func copyFile(src, dest string) error {
 
 // loadValuesFromFS reads values.yaml from an embed.FS path, returning
 // the description and key-value pairs.
+// path.Join (not filepath.Join) is required because embed.FS always uses
+// forward-slash separators regardless of the host OS.
 func loadValuesFromFS(fsys embed.FS, dir string) (desc string, vals map[string]string, err error) {
-	data, err := fsys.ReadFile(filepath.Join(dir, "values.yaml"))
+	data, err := fsys.ReadFile(path.Join(dir, "values.yaml"))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", map[string]string{}, nil

@@ -3,6 +3,7 @@ package template
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -160,7 +161,7 @@ func TestScaffoldEditorAbort(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrAborted, got nil")
 	}
-	if !isErrAborted(err) {
+	if !errors.Is(err, ErrAborted) {
 		t.Errorf("expected ErrAborted, got: %v", err)
 	}
 
@@ -249,7 +250,7 @@ func TestScaffoldValidateFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from ValidateCompose with failing runtime, got nil")
 	}
-	if !isErrInvalidTemplate(err) {
+	if !errors.Is(err, ErrInvalidTemplate) {
 		t.Errorf("expected ErrInvalidTemplate, got: %v", err)
 	}
 }
@@ -263,21 +264,3 @@ func (f *failComposeRT) ComposeCmd(ctx context.Context, project, dir string, fil
 	return exec.Command("false")
 }
 
-func isErrAborted(err error) bool {
-	return strings.Contains(err.Error(), ErrAborted.Error()) || err == ErrAborted ||
-		isWrapped(err, ErrAborted)
-}
-
-func isErrInvalidTemplate(err error) bool {
-	return strings.Contains(err.Error(), ErrInvalidTemplate.Error()) || err == ErrInvalidTemplate ||
-		isWrapped(err, ErrInvalidTemplate)
-}
-
-func isWrapped(err, target error) bool {
-	var e interface{ Unwrap() error }
-	if ok := strings.HasPrefix(err.Error(), target.Error()); ok {
-		return true
-	}
-	_ = e
-	return false
-}

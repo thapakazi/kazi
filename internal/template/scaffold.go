@@ -294,6 +294,10 @@ func Scaffold(ctx context.Context, rt runtime.Runtime, name, imageRef string, ou
 
 	// Validate
 	if err := ValidateCompose(ctx, rt, templateDir); err != nil {
+		// Intentionally do NOT remove templateDir here. The CLI can offer a
+		// re-edit loop: re-invoke OpenEditor on the same path, then validate
+		// again. Cleaning up on user abort is the CLI's responsibility, not
+		// Scaffold's — Scaffold only cleans up on editor error or empty-file abort.
 		return "", err
 	}
 
