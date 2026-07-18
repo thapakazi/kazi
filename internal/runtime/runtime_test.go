@@ -55,3 +55,40 @@ func TestCLIComposeCmd(t *testing.T) {
 		t.Errorf("args = %v\nwant %v", cmd.Args, want)
 	}
 }
+
+func TestCLICmd(t *testing.T) {
+	c := &CLI{Bin: "docker"}
+	cmd := c.Cmd(t.Context(), "network", "create", "kazi")
+	want := "docker network create kazi"
+	if strings.Join(cmd.Args, " ") != want {
+		t.Errorf("args = %v, want %q", cmd.Args, want)
+	}
+}
+
+func TestFakeCmdScripting(t *testing.T) {
+	f := &Fake{
+		FailPrefix: []string{"network inspect"},
+		CmdOut:     map[string]string{"exec kazi-proxy cat": "CERTDATA"},
+	}
+	if err := f.Cmd(t.Context(), "network", "inspect", "kazi").Run(); err == nil {
+		t.Error("inspect should fail (scripted)")
+	}
+	out, err := f.Cmd(t.Context(), "exec", "kazi-proxy", "cat", "/data/root.crt").Output()
+	if err != nil || strings.TrimSpace(string(out)) != "CERTDATA" {
+		t.Errorf("out=%q err=%v", out, err)
+	}
+	if err := f.Cmd(t.Context(), "network", "create", "kazi").Run(); err != nil {
+		t.Errorf("create should succeed: %v", err)
+	}
+	if len(f.Cmds) != 3 || strings.Join(f.Cmds[2], " ") != "network create kazi" {
+		t.Errorf("cmds = %v", f.Cmds)
+	}
+}
+
+func TestFakeComposeConfigJSON(t *testing.T) {
+	f := &Fake{ConfigJSON: `{"services":{}}`}
+	out, err := f.ComposeCmd(t.Context(), "p", "/d", nil, "config", "--format", "json").Output()
+	if err != nil || strings.TrimSpace(string(out)) != `{"services":{}}` {
+		t.Errorf("out=%q err=%v", out, err)
+	}
+}

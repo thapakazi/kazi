@@ -33,6 +33,9 @@ type Runtime interface {
 	// ComposeCmd builds `<bin> compose -p <project> --project-directory <dir>
 	// [-f file]... <args...>` without running it.
 	ComposeCmd(ctx context.Context, project, dir string, files []string, args ...string) *exec.Cmd
+	// Cmd builds `<bin> <args...>` without running it. Used for network
+	// inspect/create and exec operations — subprocess only, never the API socket.
+	Cmd(ctx context.Context, args ...string) *exec.Cmd
 }
 
 // Detect picks a runtime. pref "" or "auto" probes docker, podman, nerdctl
@@ -111,4 +114,8 @@ func (c *CLI) ComposeCmd(ctx context.Context, project, dir string, files []strin
 	}
 	a = append(a, args...)
 	return exec.CommandContext(ctx, c.Bin, a...)
+}
+
+func (c *CLI) Cmd(ctx context.Context, args ...string) *exec.Cmd {
+	return exec.CommandContext(ctx, c.Bin, args...)
 }
