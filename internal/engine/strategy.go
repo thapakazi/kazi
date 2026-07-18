@@ -220,9 +220,21 @@ func (imageStrategy) up(ctx context.Context, e *Engine, t target) error {
 }
 
 func (imageStrategy) down(ctx context.Context, e *Engine, t target, extraArgs ...string) error {
-	// stop, never rm — the manifest owns identity.
-	if err := e.frameCmd(compose.Run(e.RT.Cmd(ctx, "stop", imageContainerName(t.name)), e.Out, e.Err), "stop", t.name); err != nil {
-		return err
+	cname := imageContainerName(t.name)
+	if len(extraArgs) > 0 {
+		// Teardown path (e.g. ephemeral gc passes "-v --rmi local"): remove the
+		// container forcefully so it doesn't linger as a stopped container.
+		// Anonymous volumes go with -f; named volumes would need compose rm -v
+		// but image stacks don't use compose, so -f is the best we can do.
+		if err := e.frameCmd(compose.Run(e.RT.Cmd(ctx, "rm", "-f", cname), e.Out, e.Err), "rm", t.name); err != nil {
+			return err
+		}
+	} else {
+		// Normal down path: stop only — the manifest owns identity and the
+		// container can be restarted via `kazi up`.
+		if err := e.frameCmd(compose.Run(e.RT.Cmd(ctx, "stop", cname), e.Out, e.Err), "stop", t.name); err != nil {
+			return err
+		}
 	}
 	e.syncProxy(ctx, t.name, "", nil)
 	return nil

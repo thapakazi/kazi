@@ -31,10 +31,10 @@ const embeddedMarker = ".kazi-embedded"
 
 // Info describes a template in the catalog.
 type Info struct {
-	Name        string
-	Description string
-	Path        string
-	Embedded    bool
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Path        string `json:"path"`
+	Embedded    bool   `json:"embedded"`
 }
 
 // Dir returns the directory where templates are stored on disk.
@@ -113,6 +113,10 @@ func List() ([]Info, error) {
 // embedded starter on first use. It never overwrites an existing directory.
 // Returns the directory path; unknown name → error listing available starters.
 func Materialize(name string) (string, error) {
+	if !store.IsDNSLabel(name) {
+		return "", fmt.Errorf("invalid template name %q: must be a lowercase DNS label (letters, digits, hyphens; no path separators)", name)
+	}
+
 	dest := filepath.Join(Dir(), name)
 
 	// If already on disk, return immediately without touching it.
@@ -150,6 +154,10 @@ func Materialize(name string) (string, error) {
 // overwriting user-imported content that happens to share the name of an
 // embedded starter.
 func Reset(name string) error {
+	if !store.IsDNSLabel(name) {
+		return fmt.Errorf("invalid template name %q: must be a lowercase DNS label (letters, digits, hyphens; no path separators)", name)
+	}
+
 	// Check it is a known embedded starter.
 	embeddedPath := path.Join("starters", name)
 	if _, err := embeddedStarters.ReadDir(embeddedPath); err != nil {
@@ -184,6 +192,10 @@ func Reset(name string) error {
 func Import(src, name string) (Info, error) {
 	if name == "" {
 		name = filepath.Base(src)
+	}
+
+	if !store.IsDNSLabel(name) {
+		return Info{}, fmt.Errorf("invalid template name %q: must be a lowercase DNS label (letters, digits, hyphens; no path separators)", name)
 	}
 
 	dest := filepath.Join(Dir(), name)

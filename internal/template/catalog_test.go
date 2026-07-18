@@ -182,6 +182,79 @@ func TestReset(t *testing.T) {
 	}
 }
 
+// TestImportPathTraversal verifies Finding 1: Import rejects names that would
+// escape the templates directory via path traversal or invalid characters.
+func TestImportPathTraversal(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("KAZI_CONFIG_DIR", tmpDir)
+
+	// Prepare a fixture dir with a compose file for the valid import cases.
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "compose.yml"), []byte("services:\n  x:\n    image: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// These names contain path separators, "..", or invalid characters for a DNS
+	// label, so Import must reject all of them without writing any files.
+	badNames := []string{
+		"../evil",
+		"a/b",
+		"a\\b",
+		"../../tmp/pwn",
+		"..",
+		".",
+		"UPPERCASE",
+		"has space",
+		"has_underscore",
+	}
+	for _, name := range badNames {
+		_, err := template.Import(srcDir, name)
+		if err == nil {
+			t.Errorf("Import with name %q should fail but succeeded", name)
+		}
+	}
+
+	// Verify nothing was written under the templates dir after the rejected imports.
+	templatesDir := filepath.Join(tmpDir, "templates")
+	entries, _ := os.ReadDir(templatesDir)
+	if len(entries) != 0 {
+		t.Errorf("unexpected entries under templates dir after rejected imports: %v", entries)
+	}
+
+	// Confirm a valid name still works.
+	info, err := template.Import(srcDir, "my-valid-name")
+	if err != nil {
+		t.Fatalf("Import with valid name failed: %v", err)
+	}
+	if info.Name != "my-valid-name" {
+		t.Errorf("info.Name = %q, want my-valid-name", info.Name)
+	}
+}
+
+// TestMaterializePathTraversal verifies Materialize rejects invalid names.
+func TestMaterializePathTraversal(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	badNames := []string{"../evil", "a/b", "UPPER", "has_underscore"}
+	for _, name := range badNames {
+		_, err := template.Materialize(name)
+		if err == nil {
+			t.Errorf("Materialize with name %q should fail but succeeded", name)
+		}
+	}
+}
+
+// TestResetPathTraversal verifies Reset rejects invalid names.
+func TestResetPathTraversal(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	badNames := []string{"../evil", "a/b", "UPPER", "has_underscore"}
+	for _, name := range badNames {
+		err := template.Reset(name)
+		if err == nil {
+			t.Errorf("Reset with name %q should fail but succeeded", name)
+		}
+	}
+}
+
 func TestImportDir(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 

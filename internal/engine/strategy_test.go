@@ -278,6 +278,48 @@ func TestImageStrategyPortMapping(t *testing.T) {
 	})
 }
 
+// TestImageDownExtraArgsRmsContainer verifies Finding 3: imageStrategy.down
+// with no extraArgs issues `stop`; with extraArgs (teardown intent) issues `rm -f`.
+func TestImageDownExtraArgsRmsContainer(t *testing.T) {
+	t.Run("no extraArgs → stop", func(t *testing.T) {
+		t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+		registerImageStack(t, "app", "nginx:alpine", false, nil, nil, nil)
+		f := &runtime.Fake{}
+		e := testEngine(t, f)
+		if err := e.Down(t.Context(), "app"); err != nil {
+			t.Fatal(err)
+		}
+		joined := joinCmds(f.Cmds)
+		if !strings.Contains(joined, "stop kazi-app") {
+			t.Errorf("down with no extraArgs must issue stop kazi-app:\n%s", joined)
+		}
+		for _, c := range f.Cmds {
+			if len(c) > 0 && c[0] == "rm" {
+				t.Errorf("down with no extraArgs must not rm:\n%s", joined)
+			}
+		}
+	})
+
+	t.Run("with extraArgs → rm -f", func(t *testing.T) {
+		t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+		registerImageStack(t, "app", "nginx:alpine", true, nil, nil, nil)
+		f := &runtime.Fake{}
+		e := testEngine(t, f)
+		if err := e.Teardown(t.Context(), "app"); err != nil {
+			t.Fatal(err)
+		}
+		joined := joinCmds(f.Cmds)
+		if !strings.Contains(joined, "rm -f kazi-app") {
+			t.Errorf("teardown must issue rm -f kazi-app:\n%s", joined)
+		}
+		for _, c := range f.Cmds {
+			if len(c) > 0 && c[0] == "stop" {
+				t.Errorf("teardown must not stop:\n%s", joined)
+			}
+		}
+	})
+}
+
 // TestSnapshotGroupsKaziStackLabel: a container with only kazi labels (no
 // compose project) + a registered image manifest → registered, not unmanaged.
 func TestSnapshotGroupsKaziStackLabel(t *testing.T) {
