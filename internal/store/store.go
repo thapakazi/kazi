@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -26,7 +27,10 @@ type Metadata struct {
 }
 
 type Spec struct {
-	Source Source `yaml:"source"`
+	Source Source       `yaml:"source"`
+	Proxy  *ProxySpec   `yaml:"proxy,omitempty"`
+	Expose []ExposeSpec `yaml:"expose,omitempty"`
+	System bool         `yaml:"system,omitempty"` // system stacks (kazi-proxy): protected from rm
 }
 
 // Source is a union: exactly one arm set. compose is the only arm
@@ -36,6 +40,19 @@ type Source struct {
 	Compose string `yaml:"compose,omitempty"`
 }
 
+// ProxySpec configures the reverse-proxy routing for a stack.
+type ProxySpec struct {
+	Service  string `yaml:"service,omitempty"`   // primary HTTP service
+	HTTPPort int    `yaml:"http_port,omitempty"` // its container port
+	Enabled  *bool  `yaml:"enabled,omitempty"`   // nil or true = routing on
+}
+
+// ExposeSpec maps a single service port for external access.
+type ExposeSpec struct {
+	Service string `yaml:"service"`
+	Port    string `yaml:"port"` // "auto" or a fixed number as string
+}
+
 type Config struct {
 	APIVersion string     `yaml:"apiVersion"`
 	Kind       string     `yaml:"kind"`
@@ -43,7 +60,50 @@ type Config struct {
 }
 
 type ConfigSpec struct {
-	Runtime string `yaml:"runtime"` // auto | docker | podman | nerdctl
+	Runtime string      `yaml:"runtime"`         // auto | docker | podman | nerdctl
+	Proxy   ProxyConfig `yaml:"proxy,omitempty"` // port-forwarding allowlists
+	Ports   PortsConfig `yaml:"ports,omitempty"` // ephemeral port range
+}
+
+// ProxyConfig lists which well-known ports the proxy should forward.
+type ProxyConfig struct {
+	TCPPorts  []int `yaml:"tcpPorts,omitempty"`
+	HTTPPorts []int `yaml:"httpPorts,omitempty"`
+}
+
+// PortsConfig controls the ephemeral port range allocated to stacks.
+type PortsConfig struct {
+	Range string `yaml:"range,omitempty"` // "42000-42999"
+}
+
+// Default port lists and range — seeded into any config that omits them.
+var DefaultTCPPorts = []int{1521, 3306, 5432, 5672, 6379, 9092, 11211, 27017}
+var DefaultHTTPPorts = []int{80, 81, 3000, 3001, 4200, 5000, 5173, 8000, 8080, 8081, 8888, 9000}
+
+const DefaultPortRange = "42000-42999"
+
+var dnsLabelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+
+// IsDNSLabel reports whether name can be used as a *.localhost hostname
+// component (stack names become hostnames in M1).
+func IsDNSLabel(name string) bool {
+	return len(name) <= 63 && dnsLabelRe.MatchString(name)
+}
+
+// applyDefaults seeds any empty config fields with their default values.
+func applyDefaults(c *Config) {
+	if c.Spec.Runtime == "" {
+		c.Spec.Runtime = "auto"
+	}
+	if len(c.Spec.Proxy.TCPPorts) == 0 {
+		c.Spec.Proxy.TCPPorts = DefaultTCPPorts
+	}
+	if len(c.Spec.Proxy.HTTPPorts) == 0 {
+		c.Spec.Proxy.HTTPPorts = DefaultHTTPPorts
+	}
+	if c.Spec.Ports.Range == "" {
+		c.Spec.Ports.Range = DefaultPortRange
+	}
 }
 
 func Root() string {
@@ -136,12 +196,14 @@ func DeleteStack(name string) error {
 	return err
 }
 
-// LoadConfig returns defaults (runtime auto) when config.yaml is absent.
+// LoadConfig returns defaults when config.yaml is absent; missing fields are
+// seeded with defaults even when the file is partially populated.
 func LoadConfig() (Config, error) {
-	def := Config{APIVersion: "kazi.dev/v1alpha1", Kind: "Config", Spec: ConfigSpec{Runtime: "auto"}}
 	b, err := os.ReadFile(filepath.Join(Root(), "config.yaml"))
 	if errors.Is(err, os.ErrNotExist) {
-		return def, nil
+		c := Config{APIVersion: "kazi.dev/v1alpha1", Kind: "Config"}
+		applyDefaults(&c)
+		return c, nil
 	}
 	if err != nil {
 		return Config{}, err
@@ -150,8 +212,6 @@ func LoadConfig() (Config, error) {
 	if err := yaml.Unmarshal(b, &c); err != nil {
 		return Config{}, fmt.Errorf("parsing config.yaml: %w", err)
 	}
-	if c.Spec.Runtime == "" {
-		c.Spec.Runtime = "auto"
-	}
+	applyDefaults(&c)
 	return c, nil
 }
