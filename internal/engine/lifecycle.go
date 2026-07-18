@@ -124,41 +124,63 @@ func (e *Engine) buildOverride(ctx context.Context, t target, m *store.Manifest)
 	}
 
 	var portBindings map[string][]string
-	if m != nil && len(m.Spec.Expose) > 0 {
-		portBindings = map[string][]string{}
+	if m != nil {
 		ps, loadErr := proxy.LoadPorts()
 		if loadErr != nil {
 			return "", proxy.Plan{}, fmt.Errorf("loading port state: %w", loadErr)
 		}
 
+		if len(m.Spec.Expose) > 0 {
+			portBindings = map[string][]string{}
+
+			for _, exp := range m.Spec.Expose {
+				si, ok := svcMap[exp.Service]
+				if !ok {
+					return "", proxy.Plan{}, fmt.Errorf("service %q in expose spec not found in compose config", exp.Service)
+				}
+
+				containerPort := 0
+				if exp.Port != "auto" {
+					// parse fixed port
+					var n int
+					if _, scanErr := fmt.Sscanf(exp.Port, "%d", &n); scanErr != nil || n <= 0 {
+						return "", proxy.Plan{}, fmt.Errorf("invalid expose port %q for service %q", exp.Port, exp.Service)
+					}
+					containerPort = n
+				} else {
+					// auto-detect: service must expose exactly one port
+					if len(si.Ports) != 1 {
+						return "", proxy.Plan{}, fmt.Errorf("service %q exposes %d ports; pin one with spec.expose port", exp.Service, len(si.Ports))
+					}
+					containerPort = si.Ports[0]
+				}
+
+				pinned := 0
+				hostPort, allocErr := ps.Allocate(t.name, exp.Service, containerPort, pinned, lo, hi)
+				if allocErr != nil {
+					return "", proxy.Plan{}, fmt.Errorf("allocating port for %q/%q: %w", t.name, exp.Service, allocErr)
+				}
+				portBindings[exp.Service] = append(portBindings[exp.Service], fmt.Sprintf("%d:%d", hostPort, containerPort))
+			}
+		}
+
+		// Reconcile: free allocations for services that no longer appear in
+		// spec.expose (user hand-edited the manifest).  Only for registered
+		// stacks (m != nil); discovered stacks have nil manifests and are left
+		// untouched.
+		exposedServices := map[string]bool{}
 		for _, exp := range m.Spec.Expose {
-			si, ok := svcMap[exp.Service]
-			if !ok {
-				return "", proxy.Plan{}, fmt.Errorf("service %q in expose spec not found in compose config", exp.Service)
+			exposedServices[exp.Service] = true
+		}
+		changed := false
+		for _, alloc := range ps.Services(t.name) {
+			if !exposedServices[alloc.Service] {
+				ps.Free(t.name, alloc.Service)
+				changed = true
 			}
-
-			containerPort := 0
-			if exp.Port != "auto" {
-				// parse fixed port
-				var n int
-				if _, scanErr := fmt.Sscanf(exp.Port, "%d", &n); scanErr != nil || n <= 0 {
-					return "", proxy.Plan{}, fmt.Errorf("invalid expose port %q for service %q", exp.Port, exp.Service)
-				}
-				containerPort = n
-			} else {
-				// auto-detect: service must expose exactly one port
-				if len(si.Ports) != 1 {
-					return "", proxy.Plan{}, fmt.Errorf("service %q exposes %d ports; pin one with spec.expose port", exp.Service, len(si.Ports))
-				}
-				containerPort = si.Ports[0]
-			}
-
-			pinned := 0
-			hostPort, allocErr := ps.Allocate(t.name, exp.Service, containerPort, pinned, lo, hi)
-			if allocErr != nil {
-				return "", proxy.Plan{}, fmt.Errorf("allocating port for %q/%q: %w", t.name, exp.Service, allocErr)
-			}
-			portBindings[exp.Service] = append(portBindings[exp.Service], fmt.Sprintf("%d:%d", hostPort, containerPort))
+		}
+		if changed {
+			_ = ps.Save()
 		}
 	}
 

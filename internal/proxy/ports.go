@@ -208,6 +208,17 @@ func (s *PortState) FreeStack(stack string) {
 	_ = s.Save()
 }
 
+// Services returns all allocations for the given stack.
+func (s *PortState) Services(stack string) []Allocation {
+	var out []Allocation
+	for _, a := range s.Allocations {
+		if a.Stack == stack {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 // ParseRange parses a "lo-hi" port range string, e.g. "42000-42999".
 func ParseRange(r string) (lo, hi int, err error) {
 	parts := strings.SplitN(r, "-", 2)

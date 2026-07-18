@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -9,6 +10,30 @@ import (
 
 	"github.com/thapakazi/kazi/internal/engine"
 )
+
+// exposeResult is the JSON shape for a successful expose --json call.
+type exposeResult struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Action     string `json:"action"`
+	Stack      string `json:"stack"`
+	Service    string `json:"service"`
+	HostPort   int    `json:"hostPort"`
+	OK         bool   `json:"ok"`
+}
+
+// printExposeResult writes a one-line JSON object with the allocated host port.
+func printExposeResult(stack, service string, hostPort int) error {
+	return json.NewEncoder(os.Stdout).Encode(exposeResult{
+		APIVersion: apiVersion,
+		Kind:       "Result",
+		Action:     "expose",
+		Stack:      stack,
+		Service:    service,
+		HostPort:   hostPort,
+		OK:         true,
+	})
+}
 
 // endpointRow formats a single Endpoint as a tab-separated row for tabwriter.
 // Empty fields are rendered as "-".
@@ -77,11 +102,10 @@ var exposeCmd = &cobra.Command{
 			return err
 		}
 		if jsonOut {
-			action := "expose"
 			if exposeRemove {
-				action = "unexpose"
+				return printResult("unexpose", stack)
 			}
-			return printResult(action, stack)
+			return printExposeResult(stack, service, hostPort)
 		}
 		if exposeRemove {
 			fmt.Printf("removed exposure for %s/%s\n", stack, service)

@@ -162,6 +162,52 @@ func TestSyncRestartsCrashedProxy(t *testing.T) {
 	}
 }
 
+// TestSyncReloadFailureKeepsOldConfigOnDisk verifies that a reload failure after a
+// successful validate leaves the old Caddyfile on disk unchanged (Caddyfile.new is
+// removed), so the next Sync sees a diff and retries.
+func TestSyncReloadFailureKeepsOldConfigOnDisk(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+
+	// Step 1: seed a successful Sync with routesA.
+	f1 := &runtime.Fake{}
+	routesA := []Route{{Stack: "a", Service: "w", Hostname: "a.localhost", Alias: "w.a", Port: 80}}
+	if err := Sync(t.Context(), f1, routesA, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify routesA content is on disk.
+	caddyPath := filepath.Join(Dir(), "Caddyfile")
+	b, err := os.ReadFile(caddyPath)
+	if err != nil || !strings.Contains(string(b), "a.localhost") {
+		t.Fatalf("seed Caddyfile bad: %s err=%v", b, err)
+	}
+
+	// Step 2: Sync with routesB, but fail on caddy reload.
+	routesB := []Route{{Stack: "b", Service: "w", Hostname: "b.localhost", Alias: "w.b", Port: 80}}
+	bad := &runtime.Fake{FailPrefix: []string{"exec kazi-proxy caddy reload"}}
+	if err := Sync(t.Context(), bad, routesB, true); err == nil {
+		t.Fatal("want reload error")
+	}
+
+	// Caddyfile must still hold routesA's content.
+	b, err = os.ReadFile(caddyPath)
+	if err != nil {
+		t.Fatalf("reading Caddyfile after reload failure: %v", err)
+	}
+	if !strings.Contains(string(b), "a.localhost") {
+		t.Errorf("old config hostname missing after reload failure:\n%s", b)
+	}
+	if strings.Contains(string(b), "b.localhost") {
+		t.Errorf("new config hostname must NOT be in Caddyfile after reload failure:\n%s", b)
+	}
+
+	// Caddyfile.new must be cleaned up.
+	newPath := filepath.Join(Dir(), "Caddyfile.new")
+	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
+		t.Errorf("Caddyfile.new should be removed after reload failure; stat err=%v", err)
+	}
+}
+
 func TestSystemManifest(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	m := SystemManifest()

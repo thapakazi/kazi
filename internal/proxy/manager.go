@@ -143,13 +143,16 @@ func Sync(ctx context.Context, rt runtime.Runtime, routes []Route, proxyRunning 
 		}
 	}
 
-	// Step 6: write Caddyfile.new for validate+rename+reload (content changed path)
+	// Step 6: write Caddyfile.new for validate+reload+rename (content changed path).
+	// We keep the new config in Caddyfile.new until both validate AND reload
+	// succeed so that a mid-flight failure never leaves disk out of sync with
+	// what live caddy is serving.
 	newPath := filepath.Join(Dir(), "Caddyfile.new")
 	if err := os.WriteFile(newPath, desired, 0o644); err != nil {
 		return fmt.Errorf("writing Caddyfile.new: %w", err)
 	}
 
-	// Step 7: validate inside the container
+	// Step 7: validate inside the container (reads Caddyfile.new via the bind-mount).
 	validateCmd := rt.Cmd(ctx, "exec", ContainerName, "caddy", "validate",
 		"--adapter", "caddyfile", "--config", "/etc/caddy/Caddyfile.new")
 	if _, err := compose.Output(validateCmd); err != nil {
@@ -157,16 +160,21 @@ func Sync(ctx context.Context, rt runtime.Runtime, routes []Route, proxyRunning 
 		return fmt.Errorf("validating Caddyfile: %w", err)
 	}
 
-	// Step 8: rename Caddyfile.new → Caddyfile
-	if err := os.Rename(newPath, caddyPath); err != nil {
-		return fmt.Errorf("installing Caddyfile: %w", err)
+	// Step 8: reload caddy directly from Caddyfile.new — BEFORE renaming.
+	// If reload fails the live caddy is still serving the old config, and
+	// Caddyfile on disk still holds the old content.  Removing Caddyfile.new
+	// on failure ensures the next Sync sees a diff and retries.
+	reloadCmd := rt.Cmd(ctx, "exec", ContainerName, "caddy", "reload",
+		"--adapter", "caddyfile", "--config", "/etc/caddy/Caddyfile.new")
+	if _, err := compose.Output(reloadCmd); err != nil {
+		_ = os.Remove(newPath)
+		return fmt.Errorf("reloading Caddyfile: %w", err)
 	}
 
-	// Step 9: reload
-	reloadCmd := rt.Cmd(ctx, "exec", ContainerName, "caddy", "reload",
-		"--adapter", "caddyfile", "--config", "/etc/caddy/Caddyfile")
-	if _, err := compose.Output(reloadCmd); err != nil {
-		return fmt.Errorf("reloading Caddyfile: %w", err)
+	// Step 9: reload succeeded — promote Caddyfile.new → Caddyfile so disk
+	// reflects the config that caddy is now serving.
+	if err := os.Rename(newPath, caddyPath); err != nil {
+		return fmt.Errorf("installing Caddyfile: %w", err)
 	}
 
 	return nil

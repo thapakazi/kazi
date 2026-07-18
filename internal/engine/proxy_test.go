@@ -86,6 +86,45 @@ func TestUpInjectsAliasAndExposePorts(t *testing.T) {
 	_ = dir
 }
 
+// TestOrphanedPortReconciliation verifies that a port allocation is freed when
+// the corresponding spec.expose entry is removed from the manifest on a
+// subsequent Up call.
+func TestOrphanedPortReconciliation(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	registerStack(t, "blog")
+
+	// First Up: manifest has expose entry for db → allocation created.
+	m, _ := store.LoadStack("blog")
+	m.Spec.Expose = []store.ExposeSpec{{Service: "db", Port: "auto"}}
+	store.SaveStack(m)
+
+	f1 := &runtime.Fake{ConfigJSON: blogConfigJSON}
+	e := testEngine(t, f1)
+	if err := e.Up(t.Context(), "blog"); err != nil {
+		t.Fatal(err)
+	}
+	ps, _ := proxy.LoadPorts()
+	if _, ok := ps.Lookup("blog", "db"); !ok {
+		t.Fatal("allocation must exist after first Up with expose entry")
+	}
+
+	// Remove the expose entry from the manifest (simulate hand-edit).
+	m2, _ := store.LoadStack("blog")
+	m2.Spec.Expose = nil
+	store.SaveStack(m2)
+
+	// Second Up: no expose entries → orphaned allocation must be freed.
+	f2 := &runtime.Fake{ConfigJSON: blogConfigJSON}
+	e2 := testEngine(t, f2)
+	if err := e2.Up(t.Context(), "blog"); err != nil {
+		t.Fatal(err)
+	}
+	ps2, _ := proxy.LoadPorts()
+	if _, ok := ps2.Lookup("blog", "db"); ok {
+		t.Error("orphaned allocation must be freed after expose entry removed from manifest")
+	}
+}
+
 func TestDownSyncsProxyRoutesAway(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	registerStack(t, "blog")
