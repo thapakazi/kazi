@@ -182,6 +182,45 @@ func TestListOrdersRegisteredFirst(t *testing.T) {
 	}
 }
 
+// TestStatusImageStackNoSpuriousError: an image-source registered stack with a
+// running container returns the stack without error — no spurious "compose file
+// no longer exists" error from os.Stat on an empty path.
+func TestStatusImageStackNoSpuriousError(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+
+	// Register an image-source manifest (no Compose path).
+	m := store.Manifest{APIVersion: "kazi.dev/v1alpha1", Kind: "Stack"}
+	m.Metadata.Name = "myimg"
+	m.Spec.Source.Image = "nginx:alpine"
+	if err := store.SaveStack(m); err != nil {
+		t.Fatal(err)
+	}
+
+	// Fake a running container with the kazi.stack label.
+	fake := &runtime.Fake{Containers: []runtime.Container{
+		{
+			ID: "c1", Name: "kazi-myimg", Image: "nginx:alpine",
+			State: "running", Status: "Up 5 minutes",
+			Labels: map[string]string{
+				"kazi.managed": "true",
+				"kazi.stack":   "myimg",
+			},
+		},
+	}}
+	e := testEngine(t, fake)
+
+	st, err := e.Status(t.Context(), "myimg")
+	if err != nil {
+		t.Fatalf("Status must not error for image stack: %v", err)
+	}
+	if st.Name != "myimg" {
+		t.Errorf("stack name = %q, want myimg", st.Name)
+	}
+	if len(st.Containers) != 1 {
+		t.Errorf("want 1 container, got %d: %+v", len(st.Containers), st.Containers)
+	}
+}
+
 func TestHealthOf(t *testing.T) {
 	cases := map[string]string{
 		"Up 3 hours (healthy)":           "healthy",

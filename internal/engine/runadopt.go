@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,15 +36,25 @@ func (e *Engine) RunImage(ctx context.Context, name, image string, ports, envs, 
 		return "", fmt.Errorf("stack %q already exists", name)
 	}
 
-	// Parse ports into ExposeSpec entries. Format: "hostPort:containerPort".
-	// We store the host port as the expose spec's Port field (pinned binding).
+	// Parse ports into ExposeSpec entries.
+	// Accepted formats: "hostPort:containerPort" or bare "port" (meaning port:port).
+	// Store the full mapping string verbatim so imageStrategy renders it correctly.
 	var expose []store.ExposeSpec
 	for _, p := range ports {
 		parts := strings.SplitN(p, ":", 2)
-		hostPort := parts[0]
+		switch len(parts) {
+		case 1:
+			if !isPortNumber(parts[0]) {
+				return "", fmt.Errorf("invalid port mapping %q: expected a port number or hostPort:containerPort", p)
+			}
+		case 2:
+			if !isPortNumber(parts[0]) || !isPortNumber(parts[1]) {
+				return "", fmt.Errorf("invalid port mapping %q: both sides of ':' must be port numbers", p)
+			}
+		}
 		expose = append(expose, store.ExposeSpec{
 			Service: name,
-			Port:    hostPort,
+			Port:    p,
 		})
 	}
 
@@ -79,6 +90,12 @@ func (e *Engine) RunImage(ctx context.Context, name, image string, ports, envs, 
 	}
 
 	return name, nil
+}
+
+// isPortNumber returns true if s is a valid TCP/UDP port number string (1–65535).
+func isPortNumber(s string) bool {
+	n, err := strconv.Atoi(s)
+	return err == nil && n >= 1 && n <= 65535
 }
 
 // nonDNSRe matches characters that are not valid in a DNS label segment.

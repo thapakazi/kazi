@@ -39,8 +39,8 @@ func TestRunImageCreatesManifestAndContainer(t *testing.T) {
 	if m.Spec.Source.Image != "nginx:alpine" {
 		t.Errorf("source.image = %q, want nginx:alpine", m.Spec.Source.Image)
 	}
-	if len(m.Spec.Expose) == 0 || m.Spec.Expose[0].Port != "8080" {
-		t.Errorf("expose = %+v, want port 8080", m.Spec.Expose)
+	if len(m.Spec.Expose) == 0 || m.Spec.Expose[0].Port != "8080:80" {
+		t.Errorf("expose = %+v, want port 8080:80 (full mapping)", m.Spec.Expose)
 	}
 	if m.Spec.Values["debug"] != "true" {
 		t.Errorf("values = %v, want debug=true", m.Spec.Values)
@@ -105,8 +105,8 @@ func TestRunImageDerivesName(t *testing.T) {
 		{"UPPER:tag", "upper"},
 		{"foo@sha256:abc123", "foo"},
 		{"registry.example.com/org/Sub_App:1.0", "sub-app"},
-		{"--bad", "bad"},  // leading dash stripped
-		{"bad--", "bad"},  // trailing dash stripped
+		{"--bad", "bad"}, // leading dash stripped
+		{"bad--", "bad"}, // trailing dash stripped
 	}
 	for _, c := range cases {
 		got := deriveImageName(c.image)
@@ -189,6 +189,58 @@ func TestAdoptUnknownContainer(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing-container") {
 		t.Errorf("error must mention unknown container name: %v", err)
+	}
+}
+
+// TestRunImagePortValidation: invalid port mapping strings are rejected early.
+func TestRunImagePortValidation(t *testing.T) {
+	cases := []struct {
+		port    string
+		wantErr bool
+	}{
+		{"8080:80", false},
+		{"8080", false},
+		{"80:80", false},
+		{"bad:80", true},
+		{"8080:bad", true},
+		{"8080:80:extra", true}, // three-part is invalid (SplitN(2) makes it "8080" + "80:extra")
+		{"0:80", true},          // port 0 invalid
+	}
+	for _, tc := range cases {
+		t.Run(tc.port, func(t *testing.T) {
+			t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+			f := &runtime.Fake{CmdOut: map[string]string{"image inspect": "{}"}}
+			e := testEngine(t, f)
+			_, err := e.RunImage(t.Context(), "app", "nginx:alpine", []string{tc.port}, nil, nil)
+			if tc.wantErr && err == nil {
+				t.Errorf("port %q: expected error, got nil", tc.port)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("port %q: unexpected error: %v", tc.port, err)
+			}
+		})
+	}
+}
+
+// TestRunImageBarePort: bare port "8080" stores "8080" and renders -p 8080:8080.
+func TestRunImageBarePort(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	f := &runtime.Fake{CmdOut: map[string]string{"image inspect": "{}"}}
+	e := testEngine(t, f)
+	_, err := e.RunImage(t.Context(), "myapp", "nginx:alpine", []string{"8080"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := store.LoadStack("myapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Spec.Expose) == 0 || m.Spec.Expose[0].Port != "8080" {
+		t.Errorf("expose = %+v, want port 8080 (bare)", m.Spec.Expose)
+	}
+	joined := joinCmds(f.Cmds)
+	if !strings.Contains(joined, "-p 8080:8080") {
+		t.Errorf("bare port must render as -p 8080:8080:\n%s", joined)
 	}
 }
 

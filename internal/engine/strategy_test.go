@@ -241,6 +241,43 @@ func TestTemplateStackEnvInterpolation(t *testing.T) {
 	}
 }
 
+// TestImageStrategyPortMapping: imageStrategy renders -p correctly for both
+// colon form ("8080:80" → `-p 8080:80`) and bare form ("8080" → `-p 8080:8080`).
+func TestImageStrategyPortMapping(t *testing.T) {
+	t.Run("colon form", func(t *testing.T) {
+		t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+		registerImageStack(t, "app", "nginx:alpine", false, nil,
+			[]store.ExposeSpec{{Service: "app", Port: "8080:80"}}, nil)
+		f := &runtime.Fake{CmdOut: map[string]string{"image inspect": "{}"}}
+		e := testEngine(t, f)
+		if err := e.Up(t.Context(), "app"); err != nil {
+			t.Fatal(err)
+		}
+		joined := joinCmds(f.Cmds)
+		if !strings.Contains(joined, "-p 8080:80") {
+			t.Errorf("colon-form port must render as -p 8080:80:\n%s", joined)
+		}
+		if strings.Contains(joined, "-p 8080:80:") {
+			t.Errorf("port must not be double-expanded:\n%s", joined)
+		}
+	})
+
+	t.Run("bare form", func(t *testing.T) {
+		t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+		registerImageStack(t, "app2", "nginx:alpine", false, nil,
+			[]store.ExposeSpec{{Service: "app2", Port: "9090"}}, nil)
+		f := &runtime.Fake{CmdOut: map[string]string{"image inspect": "{}"}}
+		e := testEngine(t, f)
+		if err := e.Up(t.Context(), "app2"); err != nil {
+			t.Fatal(err)
+		}
+		joined := joinCmds(f.Cmds)
+		if !strings.Contains(joined, "-p 9090:9090") {
+			t.Errorf("bare-form port must render as -p 9090:9090:\n%s", joined)
+		}
+	})
+}
+
 // TestSnapshotGroupsKaziStackLabel: a container with only kazi labels (no
 // compose project) + a registered image manifest → registered, not unmanaged.
 func TestSnapshotGroupsKaziStackLabel(t *testing.T) {

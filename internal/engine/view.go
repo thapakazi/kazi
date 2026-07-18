@@ -229,7 +229,7 @@ func (e *Engine) Status(ctx context.Context, name string) (StackInfo, error) {
 		if s.Name == name {
 			if s.Kind == KindRegistered {
 				m, loadErr := store.LoadStack(name)
-				if loadErr == nil {
+				if loadErr == nil && m.Spec.Source.Kind() == "compose" {
 					composePath := m.Spec.Source.Compose
 					if _, statErr := os.Stat(composePath); statErr != nil {
 						return StackInfo{}, fmt.Errorf("stack %q manifest points at %s, which no longer exists; fix the path or `kazi rm %s`",

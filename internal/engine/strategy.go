@@ -193,10 +193,16 @@ func (imageStrategy) up(ctx context.Context, e *Engine, t target) error {
 		for _, kv := range sortedEnv(t.manifest.Spec.Values) {
 			args = append(args, "-e", kv)
 		}
-		// -p from Spec.Expose pinned entries (hostPort:containerPort).
+		// -p from Spec.Expose pinned entries.
+		// Port field stores the full mapping ("8080:80") or bare port ("8080").
+		// Bare port means hostPort:containerPort are both the same number.
 		for _, exp := range t.manifest.Spec.Expose {
 			if exp.Port != "" && exp.Port != "auto" {
-				args = append(args, "-p", exp.Port+":"+exp.Port)
+				if strings.Contains(exp.Port, ":") {
+					args = append(args, "-p", exp.Port)
+				} else {
+					args = append(args, "-p", exp.Port+":"+exp.Port)
+				}
 			}
 		}
 		// -v from Spec.Volumes.
