@@ -71,23 +71,23 @@ func (s *PortState) Lookup(stack, service string) (Allocation, bool) {
 }
 
 // portFree reports whether the port is available to bind on the host.
-// We probe both 0.0.0.0 and 127.0.0.1 so that a listener on either
+// We probe both 0.0.0.0 and 127.0.0.1 so that a listener bound to either
 // interface is detected as busy.
 //
-// Both listeners are opened before either is closed to shrink the TOCTOU
-// window. On darwin (and Linux) binding 127.0.0.1:p while :p is held by
-// ln1 succeeds — the dual-hold is safe. ln2 closing after ln1 is intentional:
-// we defer ln1.Close() only after ln2's error is captured so the window
-// between the two binds is zero.
+// The probes are SEQUENTIAL: ln1 (:p) is fully closed before ln2
+// (127.0.0.1:p) is attempted. Holding both at once is wrong on Linux, where
+// binding 127.0.0.1:p while 0.0.0.0:p is held fails with EADDRINUSE — which
+// made every port look busy under Linux CI. Sequential probing is correct on
+// both Linux and darwin; the tiny TOCTOU window is acceptable for a
+// best-effort availability check.
 func portFree(p int) bool {
 	ln1, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
 	if err != nil {
 		return false
 	}
-	// Also probe on loopback to catch listeners bound to 127.0.0.1 only.
-	// ln1 is kept open until after ln2 bind attempt to avoid TOCTOU.
-	ln2, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
 	ln1.Close()
+	// Also probe loopback to catch listeners bound to 127.0.0.1 only.
+	ln2, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
 	if err != nil {
 		return false
 	}
