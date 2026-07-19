@@ -14,10 +14,10 @@ import (
 
 // gcReport is the JSON shape for `kazi gc --json`.
 type gcReport struct {
-	APIVersion string           `json:"apiVersion"`
-	Kind       string           `json:"kind"`
-	Items      []engine.GcItem  `json:"items"`
-	Reclaimed  []engine.GcItem  `json:"reclaimed"`
+	APIVersion string          `json:"apiVersion"`
+	Kind       string          `json:"kind"`
+	Items      []engine.GcItem `json:"items"`
+	Reclaimed  []engine.GcItem `json:"reclaimed"`
 }
 
 var (

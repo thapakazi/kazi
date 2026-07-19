@@ -263,4 +263,3 @@ type failComposeRT struct {
 func (f *failComposeRT) ComposeCmd(ctx context.Context, project, dir string, files []string, args ...string) *exec.Cmd {
 	return exec.Command("false")
 }
-

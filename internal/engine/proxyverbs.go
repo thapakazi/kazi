@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/thapakazi/kazi/internal/compose"
 	"github.com/thapakazi/kazi/internal/proxy"
@@ -258,6 +259,43 @@ func (e *Engine) Urls(ctx context.Context, stack string) ([]Endpoint, error) {
 			continue
 		}
 
+		// Non-compose sources: image/adopted stacks route from strategy data
+		// (honoring a pinned spec.proxy.http_port); template stacks materialize a
+		// compose file. Compose stacks fall through to the block below.
+		switch m.Spec.Source.Kind() {
+		case "image", "containers":
+			t, rerr := e.resolve(ctx, name)
+			if rerr != nil {
+				continue
+			}
+			for _, r := range e.desiredRoutes(ctx, t) {
+				endpoints = append(endpoints, Endpoint{
+					Stack: name, Service: r.Service, Kind: "http",
+					URL:    "https://" + r.Hostname,
+					Target: fmt.Sprintf("%s:%d", r.Service, r.Port),
+				})
+			}
+			endpoints = append(endpoints, imagePublishedEndpoints(name, m)...)
+			continue
+		case "template":
+			t, rerr := e.resolve(ctx, name)
+			if rerr != nil || t.composeFile == "" {
+				continue
+			}
+			jsonOut, configErr := compose.Output(e.composeCmdFor(ctx, t, "config", "--format", "json"))
+			if configErr != nil {
+				fmt.Fprintf(e.Err, "kazi: warning: reading compose config for %s: %v\n", name, configErr)
+				continue
+			}
+			svcs, parseErr := compose.ParseConfig([]byte(jsonOut))
+			if parseErr != nil {
+				fmt.Fprintf(e.Err, "kazi: warning: reading compose config for %s: %v\n", name, parseErr)
+				continue
+			}
+			endpoints = append(endpoints, e.planEndpoints(name, m.Spec.Proxy, svcs, ps)...)
+			continue
+		}
+
 		composeFile := m.Spec.Source.Compose
 		if composeFile == "" {
 			continue
@@ -275,76 +313,102 @@ func (e *Engine) Urls(ctx context.Context, stack string) ([]Endpoint, error) {
 			continue
 		}
 
-		plan := proxy.BuildPlan(name, m.Spec.Proxy, svcs, e.Cfg.Spec.Proxy.HTTPPorts, e.Cfg.Spec.Proxy.TCPPorts)
+		endpoints = append(endpoints, e.planEndpoints(name, m.Spec.Proxy, svcs, ps)...)
+	}
 
-		// HTTP endpoints from routes.
-		for _, r := range plan.Routes {
+	// Static routes (kazi route): scoped to the stack, or all when stack == "".
+	// These cover externally-run/discovered stacks kazi can't reverse-proxy
+	// directly but exposes via host.docker.internal.
+	endpoints = append(endpoints, e.staticRouteEndpoints(stack)...)
+
+	// Sort: stack → kind (http < hint < tcp) → service.
+	sortEndpoints(endpoints)
+	return endpoints, nil
+}
+
+// planEndpoints turns a compose-derived routing plan into HTTP endpoints, a
+// needs-declaration hint, and TCP endpoints (published, kazi-allocated, or a
+// nudge). Shared by the compose and template urls paths.
+func (e *Engine) planEndpoints(name string, decl *store.ProxySpec, svcs []compose.ServiceInfo, ps *proxy.PortState) []Endpoint {
+	plan := proxy.BuildPlan(name, decl, svcs, e.Cfg.Spec.Proxy.HTTPPorts, e.Cfg.Spec.Proxy.TCPPorts)
+	var endpoints []Endpoint
+
+	for _, r := range plan.Routes {
+		endpoints = append(endpoints, Endpoint{
+			Stack: name, Service: r.Service, Kind: "http",
+			URL:    "https://" + r.Hostname,
+			Target: fmt.Sprintf("%s:%d", r.Service, r.Port),
+		})
+	}
+
+	if plan.NeedsDecl {
+		snippet := "spec:\n  proxy:\n    service: <primary-service>  # run `kazi urls` after adding\n"
+		endpoints = append(endpoints, Endpoint{
+			Stack: name, Service: "", Kind: "hint", Target: name,
+			Note: fmt.Sprintf("multiple HTTP services detected; add to your manifest:\n%s", snippet),
+		})
+	}
+
+	svcMap := map[string]compose.ServiceInfo{}
+	for _, s := range svcs {
+		svcMap[s.Name] = s
+	}
+	for _, tcp := range plan.TCP {
+		si := svcMap[tcp.Service]
+		switch {
+		case si.Published[tcp.Port] != 0:
 			endpoints = append(endpoints, Endpoint{
-				Stack:   name,
-				Service: r.Service,
-				Kind:    "http",
-				URL:     "https://" + r.Hostname,
-				Target:  fmt.Sprintf("%s:%d", r.Service, r.Port),
+				Stack: name, Service: tcp.Service, Kind: "tcp",
+				URL:    fmt.Sprintf("localhost:%d", si.Published[tcp.Port]),
+				Target: fmt.Sprintf("%s:%d", tcp.Service, tcp.Port),
 			})
-		}
-
-		// NeedsDecl hint: multiple HTTP services, no primary declared.
-		if plan.NeedsDecl {
-			snippet := "spec:\n  proxy:\n    service: <primary-service>  # run `kazi urls` after adding\n"
+		case hasAlloc(ps, name, tcp.Service):
+			alloc, _ := ps.Lookup(name, tcp.Service)
 			endpoints = append(endpoints, Endpoint{
-				Stack:   name,
-				Service: "",
-				Kind:    "hint",
-				Target:  name,
-				Note:    fmt.Sprintf("multiple HTTP services detected; add to your manifest:\n%s", snippet),
+				Stack: name, Service: tcp.Service, Kind: "tcp",
+				URL:    fmt.Sprintf("localhost:%d", alloc.HostPort),
+				Target: fmt.Sprintf("%s:%d", tcp.Service, tcp.Port),
 			})
-		}
-
-		// TCP endpoints.
-		svcMap := map[string]compose.ServiceInfo{}
-		for _, s := range svcs {
-			svcMap[s.Name] = s
-		}
-
-		for _, tcp := range plan.TCP {
-			si := svcMap[tcp.Service]
-
-			// Check for compose-published port.
-			if hp, ok := si.Published[tcp.Port]; ok {
-				endpoints = append(endpoints, Endpoint{
-					Stack:   name,
-					Service: tcp.Service,
-					Kind:    "tcp",
-					URL:     fmt.Sprintf("localhost:%d", hp),
-					Target:  fmt.Sprintf("%s:%d", tcp.Service, tcp.Port),
-				})
-				continue
-			}
-
-			// Check for kazi allocation.
-			if alloc, ok := ps.Lookup(name, tcp.Service); ok {
-				endpoints = append(endpoints, Endpoint{
-					Stack:   name,
-					Service: tcp.Service,
-					Kind:    "tcp",
-					URL:     fmt.Sprintf("localhost:%d", alloc.HostPort),
-					Target:  fmt.Sprintf("%s:%d", tcp.Service, tcp.Port),
-				})
-				continue
-			}
-
-			// Nudge: not reachable, suggest expose.
+		default:
 			endpoints = append(endpoints, Endpoint{
-				Stack:   name,
-				Service: tcp.Service,
-				Kind:    "tcp",
-				Target:  fmt.Sprintf("%s:%d", tcp.Service, tcp.Port),
-				Note:    fmt.Sprintf("not reachable from host — run: kazi expose %s %s", name, tcp.Service),
+				Stack: name, Service: tcp.Service, Kind: "tcp",
+				Target: fmt.Sprintf("%s:%d", tcp.Service, tcp.Port),
+				Note:   fmt.Sprintf("not reachable from host — run: kazi expose %s %s", name, tcp.Service),
 			})
 		}
 	}
+	return endpoints
+}
 
-	// Sort: stack → kind (http < hint < tcp) → service.
+// hasAlloc reports whether a kazi port allocation exists for stack/service.
+func hasAlloc(ps *proxy.PortState, stack, service string) bool {
+	_, ok := ps.Lookup(stack, service)
+	return ok
+}
+
+// imagePublishedEndpoints reports the host-published ports of an image stack
+// (spec.expose "host:container" | "port") as TCP endpoints.
+func imagePublishedEndpoints(name string, m store.Manifest) []Endpoint {
+	var out []Endpoint
+	for _, exp := range m.Spec.Expose {
+		if exp.Port == "" || exp.Port == "auto" {
+			continue
+		}
+		host, container := exp.Port, exp.Port
+		if h, c, ok := strings.Cut(exp.Port, ":"); ok {
+			host, container = h, c
+		}
+		out = append(out, Endpoint{
+			Stack: name, Service: exp.Service, Kind: "tcp",
+			URL:    "localhost:" + host,
+			Target: exp.Service + ":" + container,
+		})
+	}
+	return out
+}
+
+// sortEndpoints orders endpoints: stack → kind (http < hint < tcp) → service.
+func sortEndpoints(endpoints []Endpoint) {
 	kindOrder := map[string]int{"http": 0, "hint": 1, "tcp": 2}
 	sort.Slice(endpoints, func(i, j int) bool {
 		a, b := endpoints[i], endpoints[j]
@@ -357,8 +421,6 @@ func (e *Engine) Urls(ctx context.Context, stack string) ([]Endpoint, error) {
 		}
 		return a.Service < b.Service
 	})
-
-	return endpoints, nil
 }
 
 // Trust extracts the root CA from the kazi-proxy container and installs it

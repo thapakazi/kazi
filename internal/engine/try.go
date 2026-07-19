@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/thapakazi/kazi/internal/proxy"
@@ -11,11 +12,52 @@ import (
 	"github.com/thapakazi/kazi/internal/template"
 )
 
+// TryValue is one template value surfaced to an interactive try form: its key,
+// the template default, and whether it's a must-change placeholder (a
+// secret-looking key or a "change-me" scaffolder default) that should block
+// launch until the user sets it.
+type TryValue struct {
+	Key        string `json:"key"`
+	Value      string `json:"value"`
+	MustChange bool   `json:"mustChange"`
+}
+
+// TryValues loads a template's values.yaml keys with their defaults, flagging
+// must-change placeholders, for the TUI try form. It materializes the template
+// if needed. Keys are returned sorted so the form is stable. It composes the
+// exact inputs the existing `try --set k=v` CLI path takes — no new launch
+// capability.
+func (e *Engine) TryValues(tmpl string) ([]TryValue, error) {
+	dir, err := template.Materialize(tmpl)
+	if err != nil {
+		return nil, fmt.Errorf("try: template %q: %w", tmpl, err)
+	}
+	_, defaults, err := template.LoadValues(dir)
+	if err != nil {
+		return nil, fmt.Errorf("try: loading values for %q: %w", tmpl, err)
+	}
+	keys := make([]string, 0, len(defaults))
+	for k := range defaults {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]TryValue, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, TryValue{
+			Key:        k,
+			Value:      defaults[k],
+			MustChange: template.IsMustChange(k, defaults[k]),
+		})
+	}
+	return out, nil
+}
+
 // TryOpts controls the behaviour of a Try session.
 type TryOpts struct {
 	Detach bool
 	Keep   bool
 	Sets   []string // --set k=v overrides
+	Name   string   // explicit stack name (create form); empty ⇒ auto-picked from the template
 }
 
 // Try materializes a template, picks a free DNS name, writes an ephemeral
@@ -47,10 +89,23 @@ func (e *Engine) Try(ctx context.Context, tmpl string, opts TryOpts) (string, []
 		}
 	}
 
-	// 4. Pick a free stack name: tmpl, then tmpl-2 … tmpl-9.
-	name, err := pickName(tmpl)
-	if err != nil {
-		return "", nil, fmt.Errorf("try: %w", err)
+	// 4. Resolve the stack name. An explicit name (the create form's) is used
+	// verbatim after validation; otherwise pick a free one: tmpl, then tmpl-2 …
+	var name string
+	if opts.Name != "" {
+		if !store.IsDNSLabel(opts.Name) {
+			return "", nil, fmt.Errorf("try: invalid stack name %q: must be a DNS label ([a-z0-9-], max 63 chars)", opts.Name)
+		}
+		if _, loadErr := store.LoadStack(opts.Name); loadErr == nil {
+			return "", nil, fmt.Errorf("try: stack %q already exists", opts.Name)
+		}
+		name = opts.Name
+	} else {
+		var perr error
+		name, perr = pickName(tmpl)
+		if perr != nil {
+			return "", nil, fmt.Errorf("try: %w", perr)
+		}
 	}
 
 	// 5. Write the manifest.

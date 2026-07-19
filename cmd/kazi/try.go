@@ -28,6 +28,7 @@ var (
 	tryKeep   bool
 	tryDetach bool
 	trySets   []string
+	tryName   string
 )
 
 var tryCmd = &cobra.Command{
@@ -51,6 +52,7 @@ var tryCmd = &cobra.Command{
 			Detach: tryDetach,
 			Keep:   tryKeep,
 			Sets:   trySets,
+			Name:   tryName,
 		}
 
 		// Use a signal context so we hear Ctrl-C / SIGTERM.
@@ -93,7 +95,7 @@ var tryCmd = &cobra.Command{
 			"Ctrl-C to tear down (zero residue)… (second Ctrl-C = abandon; kazi gc reclaims)\n")
 
 		// Stream logs; ignore context-canceled error (that's our signal).
-		logErr := eng.Logs(sigCtx, name, "", true, "")
+		logErr := eng.Logs(sigCtx, name, "", true, "", "")
 		if logErr != nil && sigCtx.Err() == nil {
 			// Real log error, not a cancellation — print it as a warning.
 			fmt.Fprintf(os.Stderr, "kazi: warning: logs: %v\n", logErr)
@@ -134,6 +136,7 @@ func init() {
 	tryCmd.Flags().BoolVar(&tryKeep, "keep", false, "register as a persistent (non-ephemeral) stack")
 	tryCmd.Flags().BoolVarP(&tryDetach, "detach", "d", false, "start detached (don't stream logs)")
 	tryCmd.Flags().StringArrayVar(&trySets, "set", nil, "set a template value (k=v), repeatable")
+	tryCmd.Flags().StringVar(&tryName, "name", "", "explicit stack name (default: derived from the template)")
 
 	rootCmd.AddCommand(tryCmd, keepCmd)
 }

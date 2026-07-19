@@ -1,0 +1,30 @@
+# kazi docs site — Justfile (Astro Starlight, powered by bun)
+# Run `just` or `just --list` from the site/ directory.
+
+# List available recipes
+default:
+    just --list
+
+# Install site dependencies with bun
+install:
+    bun install
+
+# Start the dev server with hot reload
+dev:
+    bun run dev
+
+# Build the static site into site/dist
+build:
+    bun run build
+
+# Preview the production build locally
+preview:
+    bun run preview
+
+# Run any astro subcommand (e.g. `just astro check`)
+astro *ARGS:
+    bun run astro {{ARGS}}
+
+# Remove build output and dependencies
+clean:
+    rm -rf dist node_modules .astro

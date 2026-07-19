@@ -33,6 +33,7 @@ func lifecycle(verb, short string, fn func(*engine.Engine, context.Context, stri
 var (
 	logsFollow bool
 	logsTail   string
+	logsSince  string
 )
 
 var logsCmd = &cobra.Command{
@@ -48,13 +49,14 @@ var logsCmd = &cobra.Command{
 		if len(args) == 2 {
 			service = args[1]
 		}
-		return eng.Logs(cmd.Context(), args[0], service, logsFollow, logsTail)
+		return eng.Logs(cmd.Context(), args[0], service, logsFollow, logsTail, logsSince)
 	},
 }
 
 func init() {
 	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", false, "follow log output")
 	logsCmd.Flags().StringVar(&logsTail, "tail", "", "number of lines to show from the end")
+	logsCmd.Flags().StringVar(&logsSince, "since", "", "show logs since a relative time (e.g. 5m, 1h)")
 	rootCmd.AddCommand(
 		lifecycle("up", "Bring a stack up (detached, idempotent)", (*engine.Engine).Up),
 		lifecycle("down", "Stop and remove a stack's containers", (*engine.Engine).Down),

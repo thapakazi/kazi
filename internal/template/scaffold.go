@@ -46,6 +46,13 @@ var OpenEditor = func(path string) error {
 // secretRe matches environment variable names that look like secrets.
 var secretRe = regexp.MustCompile(`(?i)password|secret|token|_key`)
 
+// IsMustChange reports whether a template value is a placeholder the user must
+// change before an interactive launch: a secret-looking key
+// (password/secret/token/_key) or the scaffolder's "change-me" sentinel default.
+func IsMustChange(key, val string) bool {
+	return val == "change-me" || secretRe.MatchString(key)
+}
+
 // imageInspectResult is the minimal shape we need from `image inspect` JSON.
 type imageInspectResult struct {
 	Config struct {

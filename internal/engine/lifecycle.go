@@ -206,13 +206,14 @@ func (e *Engine) Restart(ctx context.Context, name string) error {
 }
 
 // Logs streams a stack's logs per source; service may be empty for all
-// services (compose) or to pick the first container (adopted).
-func (e *Engine) Logs(ctx context.Context, name, service string, follow bool, tail string) error {
+// services (compose) or to pick the first container (adopted). since, when
+// non-empty, maps to `compose logs --since <dur>` to bound the time window.
+func (e *Engine) Logs(ctx context.Context, name, service string, follow bool, tail, since string) error {
 	t, err := e.resolve(ctx, name)
 	if err != nil {
 		return err
 	}
-	return strategyFor(t.srcKind).logs(ctx, e, t, service, follow, tail)
+	return strategyFor(t.srcKind).logs(ctx, e, t, service, follow, tail, since)
 }
 
 // desiredRoutes builds the reverse-proxy routes for a non-compose stack from
@@ -225,6 +226,7 @@ func (e *Engine) Logs(ctx context.Context, name, service string, follow bool, ta
 //     single HTTP container gets the bare <stack>.localhost, otherwise
 //     <container>.<stack>.localhost.
 func (e *Engine) desiredRoutes(ctx context.Context, t target) []proxy.Route {
+	hostBase := hostBaseFor(t)
 	switch t.srcKind {
 	case "image":
 		port, ok := e.imageRoute(ctx, t)
@@ -233,7 +235,7 @@ func (e *Engine) desiredRoutes(ctx context.Context, t target) []proxy.Route {
 		}
 		return []proxy.Route{{
 			Stack: t.name, Service: t.name,
-			Hostname: t.name + ".localhost",
+			Hostname: hostBase + ".localhost",
 			Alias:    t.name + "." + t.name,
 			Port:     port,
 		}}
@@ -263,9 +265,9 @@ func (e *Engine) desiredRoutes(ctx context.Context, t target) []proxy.Route {
 		}
 		var routes []proxy.Route
 		for _, h := range httpCs {
-			host := h.name + "." + t.name + ".localhost"
+			host := h.name + "." + hostBase + ".localhost"
 			if len(httpCs) == 1 {
-				host = t.name + ".localhost"
+				host = hostBase + ".localhost"
 			}
 			routes = append(routes, proxy.Route{
 				Stack: t.name, Service: h.name,
@@ -278,6 +280,15 @@ func (e *Engine) desiredRoutes(ctx context.Context, t target) []proxy.Route {
 	default:
 		return nil
 	}
+}
+
+// hostBaseFor returns the *.localhost subdomain for a stack: a custom
+// spec.proxy.hostname when set, else the stack name.
+func hostBaseFor(t target) string {
+	if t.manifest != nil && t.manifest.Spec.Proxy != nil && t.manifest.Spec.Proxy.Hostname != "" {
+		return t.manifest.Spec.Proxy.Hostname
+	}
+	return t.name
 }
 
 // files returns the -f list for lifecycle verbs: the manifest's compose
@@ -462,6 +473,18 @@ func (e *Engine) doSyncProxy(ctx context.Context, exclude string, extraStack str
 		}
 		merged = append(merged, extraPlan.Routes...)
 		allRoutes = merged
+	}
+
+	// Merge static routes (kazi route): <host>.localhost → host.docker.internal:<port>.
+	// These expose host-published ports of externally-run services with a TLS URL.
+	if staticRoutes, srErr := store.LoadRoutes(); srErr == nil {
+		for _, sr := range staticRoutes {
+			allRoutes = append(allRoutes, proxy.Route{
+				Hostname: sr.Host + ".localhost",
+				Alias:    hostGateway,
+				Port:     sr.Port,
+			})
+		}
 	}
 
 	// Ensure proxy stack files exist before calling Sync.

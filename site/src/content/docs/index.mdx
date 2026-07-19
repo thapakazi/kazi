@@ -1,0 +1,77 @@
+---
+title: Introduction
+description: kazi — the control plane for your local containers. A compose-preferred, runtime-agnostic local stack manager.
+---
+
+import { Card, CardGrid, Aside, LinkButton, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import tuiDemo from '../../assets/tui-demo.svg';
+
+<Tabs>
+  <TabItem label="In plain words">
+    - Apps on your computer often run in little sealed boxes called **containers**.
+    - Once you have a few, it gets messy — which ones are running? what are they called? how do I open them?
+    - **kazi** is a friendly control panel for those boxes: it shows them all in one tidy list.
+    - You open your apps by **name** in the browser (a padlock and all) instead of hunting for numbers.
+    - Need a quick test database? **One command** starts it, and it cleans up after itself when you're done.
+  </TabItem>
+  <TabItem label="For developers">
+    - **kazi** is a compose-preferred, runtime-agnostic local stack manager.
+    - One view of **every container** on your machine, grouped by stack.
+    - Run existing compose projects **by name** — over HTTPS, without `cd`-ing anywhere.
+    - **Docker** is first-class and fully tested; **podman** and **nerdctl** are auto-detected and best-effort — same `<runtime> compose` contract.
+  </TabItem>
+</Tabs>
+
+<LinkButton href="/getting-started/installation/" icon="right-arrow">Install kazi</LinkButton>
+<LinkButton href="https://github.com/thapakazi/kazi" variant="minimal" icon="external">View on GitHub</LinkButton>
+
+<Image src={tuiDemo} alt="kazi TUI demo (placeholder)" />
+
+<Aside type="note">
+The TUI (bubbletea dashboard) lands in milestone **M5**. The clip above is a
+placeholder — drop the recorded GIF at `site/src/assets/tui-demo.gif` and swap
+the import when it's ready.
+</Aside>
+
+## Why kazi?
+
+Every card below is a problem you've probably hit. kazi is the fix.
+
+<CardGrid>
+  <Card title="Wait, what's even running?" icon="laptop">
+    You start a project here, another one there, and lose track. `kazi ls` lists
+    all of them in one place — including compose projects you started somewhere
+    else. Nothing to import, nothing to configure.
+  </Card>
+  <Card title="Which port was that on?" icon="approve-check">
+    Stop guessing `localhost:3000` vs `:8080`. Open your app by name —
+    `https://blog.localhost` — with a real padlock. kazi runs the proxy and
+    certificates for you.
+  </Card>
+  <Card title="Containers are eating my disk" icon="seti:db">
+    Test databases, one-off images, and leftover volumes quietly pile up until
+    you're out of space. `kazi try postgres` runs a scratch database and removes
+    it completely when you quit — and `kazi gc` sweeps up whatever else got left
+    behind.
+  </Card>
+  <Card title="Can claude/gpt use it?" icon="puzzle">
+    Every command prints clean JSON and returns proper exit codes, so a script
+    or a coding agent can run kazi directly. Cli is agent friendly from day one. 
+  </Card>
+</CardGrid>
+
+## Next steps
+
+<CardGrid>
+  <Card title="Install" icon="rocket">
+    Build the binary and set up shell integration.
+
+    [Installation →](/getting-started/installation/)
+  </Card>
+  <Card title="Use it" icon="open-book">
+    The everyday workflow: add, up, urls, try, gc.
+
+    [Usage →](/getting-started/usage/)
+  </Card>
+</CardGrid>

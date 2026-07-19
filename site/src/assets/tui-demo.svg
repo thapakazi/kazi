@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450" role="img" aria-label="kazi TUI demo placeholder">
+  <rect width="800" height="450" rx="10" fill="#0f172a"/>
+  <rect x="0" y="0" width="800" height="34" rx="10" fill="#1e293b"/>
+  <circle cx="22" cy="17" r="6" fill="#ef4444"/>
+  <circle cx="44" cy="17" r="6" fill="#f59e0b"/>
+  <circle cx="66" cy="17" r="6" fill="#22c55e"/>
+  <text x="400" y="21" font-family="monospace" font-size="13" fill="#94a3b8" text-anchor="middle">kazi — tui</text>
+  <text x="400" y="205" font-family="monospace" font-size="26" fill="#38bdf8" text-anchor="middle">▶  TUI demo GIF</text>
+  <text x="400" y="245" font-family="monospace" font-size="16" fill="#64748b" text-anchor="middle">placeholder — the bubbletea dashboard ships in M5</text>
+  <text x="400" y="275" font-family="monospace" font-size="14" fill="#475569" text-anchor="middle">replace site/src/assets/tui-demo.gif when recorded</text>
+</svg>

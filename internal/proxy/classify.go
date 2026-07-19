@@ -132,11 +132,18 @@ func BuildPlan(stack string, decl *store.ProxySpec, svcs []compose.ServiceInfo, 
 		plan.NeedsDecl = true
 	}
 
+	// hostBase is the *.localhost subdomain: a custom spec.proxy.hostname when
+	// set, else the stack name. The internal network Alias always stays
+	// stack-based (it's the container DNS name, not the public URL).
+	hostBase := stack
+	if decl != nil && decl.Hostname != "" {
+		hostBase = decl.Hostname
+	}
 	for _, name := range httpSvcs {
 		plan.Routable[name] = true
-		host := name + "." + stack + ".localhost"
+		host := name + "." + hostBase + ".localhost"
 		if name == plan.Primary {
-			host = stack + ".localhost"
+			host = hostBase + ".localhost"
 		}
 		plan.Routes = append(plan.Routes, Route{
 			Stack: stack, Service: name, Hostname: host,
@@ -146,4 +153,3 @@ func BuildPlan(stack string, decl *store.ProxySpec, svcs []compose.ServiceInfo, 
 	sort.Slice(plan.Routes, func(i, j int) bool { return plan.Routes[i].Hostname < plan.Routes[j].Hostname })
 	return plan
 }
-
