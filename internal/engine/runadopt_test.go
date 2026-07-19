@@ -22,8 +22,8 @@ func TestRunImageCreatesManifestAndContainer(t *testing.T) {
 	}
 	e := testEngine(t, f)
 
-	name, err := e.RunImage(t.Context(), "myapp", "nginx:alpine",
-		[]string{"8080:80"}, []string{"DEBUG=true"}, []string{"data:/app/data"})
+	name, err := e.RunImage(t.Context(), "myapp", "nginx:alpine", RunOpts{
+		Ports: []string{"8080:80"}, Envs: []string{"DEBUG=true"}, Vols: []string{"data:/app/data"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestRunImagePortValidation(t *testing.T) {
 			t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 			f := &runtime.Fake{CmdOut: map[string]string{"image inspect": "{}"}}
 			e := testEngine(t, f)
-			_, err := e.RunImage(t.Context(), "app", "nginx:alpine", []string{tc.port}, nil, nil)
+			_, err := e.RunImage(t.Context(), "app", "nginx:alpine", RunOpts{Ports: []string{tc.port}})
 			if tc.wantErr && err == nil {
 				t.Errorf("port %q: expected error, got nil", tc.port)
 			}
@@ -227,7 +227,7 @@ func TestRunImageBarePort(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	f := &runtime.Fake{CmdOut: map[string]string{"image inspect": "{}"}}
 	e := testEngine(t, f)
-	_, err := e.RunImage(t.Context(), "myapp", "nginx:alpine", []string{"8080"}, nil, nil)
+	_, err := e.RunImage(t.Context(), "myapp", "nginx:alpine", RunOpts{Ports: []string{"8080"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -32,6 +32,10 @@ services:
       - caddy-data:/data
     networks:
       - kazi
+    # Lets static routes reach host-published ports (kazi route). Resolves
+    # automatically on Docker Desktop; the mapping is required on Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 volumes:
   caddy-data: {}
 networks:

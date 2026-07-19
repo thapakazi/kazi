@@ -3,6 +3,7 @@
 package store
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -66,6 +67,7 @@ type ProxySpec struct {
 	Service  string `yaml:"service,omitempty"`   // primary HTTP service
 	HTTPPort int    `yaml:"http_port,omitempty"` // its container port
 	Enabled  *bool  `yaml:"enabled,omitempty"`   // nil or true = routing on
+	Hostname string `yaml:"hostname,omitempty"`  // custom *.localhost subdomain; empty ⇒ stack name
 }
 
 // ExposeSpec maps a single service port for external access.
@@ -90,6 +92,12 @@ type ConfigSpec struct {
 	Proxy   ProxyConfig   `yaml:"proxy,omitempty"`   // port-forwarding allowlists
 	Ports   PortsConfig   `yaml:"ports,omitempty"`   // ephemeral port range
 	Cleanup CleanupConfig `yaml:"cleanup,omitempty"` // gc policy
+	TUI     TUIConfig     `yaml:"tui,omitempty"`     // dashboard settings
+}
+
+// TUIConfig controls the TUI dashboard. All fields optional.
+type TUIConfig struct {
+	RefreshInterval string `yaml:"refreshInterval,omitempty"` // duration string, default "2s"
 }
 
 // ProxyConfig lists which well-known ports the proxy should forward.
@@ -151,6 +159,45 @@ func Root() string {
 
 func stackPath(name string) string {
 	return filepath.Join(Root(), "stacks", name+".yaml")
+}
+
+// StackPath returns the on-disk manifest path for a registered stack. Exported
+// so the edit flow (kazi edit / TUI e) can open the real file in $EDITOR.
+func StackPath(name string) string { return stackPath(name) }
+
+// ValidateManifest checks that b is a well-formed v1alpha1 Stack manifest:
+// parseable YAML with only known fields, apiVersion kazi.dev/v1alpha1, kind
+// Stack, a DNS-label name, and exactly one source arm set. It is the validator
+// the edit flow runs after a manifest is saved in $EDITOR.
+func ValidateManifest(b []byte) error {
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
+	var m Manifest
+	if err := dec.Decode(&m); err != nil {
+		return fmt.Errorf("invalid manifest: %w", err)
+	}
+	if m.APIVersion != "kazi.dev/v1alpha1" {
+		return fmt.Errorf("invalid manifest: apiVersion must be kazi.dev/v1alpha1, got %q", m.APIVersion)
+	}
+	if m.Kind != "Stack" {
+		return fmt.Errorf("invalid manifest: kind must be Stack, got %q", m.Kind)
+	}
+	if !IsDNSLabel(m.Metadata.Name) {
+		return fmt.Errorf("invalid manifest: metadata.name %q must be a DNS label ([a-z0-9-], max 63 chars)", m.Metadata.Name)
+	}
+	if m.Spec.Source.Kind() == "" {
+		return fmt.Errorf("invalid manifest: spec.source must set exactly one of compose/image/template/containers")
+	}
+	return nil
+}
+
+// ValidateManifestFile validates the manifest file at path.
+func ValidateManifestFile(path string) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading manifest %s: %w", path, err)
+	}
+	return ValidateManifest(b)
 }
 
 // validName rejects empty names and names that could escape the stacks

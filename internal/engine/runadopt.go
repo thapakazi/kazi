@@ -15,12 +15,28 @@ import (
 	"github.com/thapakazi/kazi/internal/store"
 )
 
+// RunOpts carries the optional knobs for RunImage: published ports, env, and
+// volumes, plus a reverse-proxy route (custom hostname and/or a pinned HTTP
+// port). HTTPPort must be set before up because it decides whether the
+// container joins the kazi network.
+type RunOpts struct {
+	Ports    []string // "8080:80" | "8080"
+	Envs     []string // "K=V"
+	Vols     []string // "data:/path"
+	Hostname string   // custom *.localhost subdomain; empty ⇒ stack name
+	HTTPPort int      // container HTTP port to route to; 0 ⇒ auto-detect
+}
+
 // RunImage registers a persistent image-backed stack and starts it.
 // name "" → derived from the image ref (basename minus tag, DNS-cleaned).
-// ports ("8080:80"), envs ("K=V"), vols ("data:/path") land in
-// spec.expose (pinned)/spec.values/spec.volumes; then the image strategy's
-// up creates + starts (labels, network, alias) and syncProxy runs.
-func (e *Engine) RunImage(ctx context.Context, name, image string, ports, envs, vols []string) (string, error) {
+// opts.Ports/Envs/Vols land in spec.expose (pinned)/spec.values/spec.volumes;
+// opts.Hostname/HTTPPort land in spec.proxy so the image strategy's up wires
+// the route (labels, network, alias) and syncProxy runs.
+func (e *Engine) RunImage(ctx context.Context, name, image string, opts RunOpts) (string, error) {
+	ports, envs, vols := opts.Ports, opts.Envs, opts.Vols
+	if opts.Hostname != "" && !store.IsDNSLabel(opts.Hostname) {
+		return "", fmt.Errorf("invalid hostname %q: must be a DNS label ([a-z0-9-], max 63 chars)", opts.Hostname)
+	}
 	// Derive name from image if not provided.
 	if name == "" {
 		name = deriveImageName(image)
@@ -77,6 +93,11 @@ func (e *Engine) RunImage(ctx context.Context, name, image string, ports, envs, 
 	m.Spec.Values = values
 	if len(vols) > 0 {
 		m.Spec.Volumes = vols
+	}
+	// Custom hostname / pinned HTTP port: recorded before up so the image
+	// strategy attaches the container to the kazi network and routes it.
+	if opts.Hostname != "" || opts.HTTPPort != 0 {
+		m.Spec.Proxy = &store.ProxySpec{Hostname: opts.Hostname, HTTPPort: opts.HTTPPort}
 	}
 	if err := store.SaveStack(m); err != nil {
 		return "", err

@@ -482,7 +482,7 @@ func TestRunAdoptRouting(t *testing.T) {
 	adopteeName := "adoptee" + suffix
 
 	// --- Phase 1: RunImage ---
-	gotName, runErr := e.RunImage(ctx, helloName, "traefik/whoami", nil, nil, nil)
+	gotName, runErr := e.RunImage(ctx, helloName, "traefik/whoami", RunOpts{})
 	if runErr != nil {
 		t.Fatalf("RunImage: %v", runErr)
 	}

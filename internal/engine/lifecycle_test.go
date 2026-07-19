@@ -94,11 +94,11 @@ func TestLogsFlags(t *testing.T) {
 	blogDir := registerStack(t, "blog")
 	fake := &runtime.Fake{}
 	e := testEngine(t, fake)
-	if err := e.Logs(t.Context(), "blog", "web", true, "50"); err != nil {
+	if err := e.Logs(t.Context(), "blog", "web", true, "50", "5m"); err != nil {
 		t.Fatal(err)
 	}
 	logs := fake.Calls[0]
-	for _, want := range []string{"logs", "-f", "--tail", "50", "web"} {
+	for _, want := range []string{"logs", "-f", "--tail", "50", "--since", "5m", "web"} {
 		if !slices.Contains(logs, want) {
 			t.Errorf("logs call missing %q: %v", want, logs)
 		}
@@ -106,6 +106,19 @@ func TestLogsFlags(t *testing.T) {
 	composePath := filepath.Join(blogDir, "docker-compose.yml")
 	if !slices.Contains(logs, composePath) {
 		t.Errorf("logs call missing compose file path %q: %v", composePath, logs)
+	}
+}
+
+func TestLogsSinceOmittedWhenEmpty(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	registerStack(t, "blog")
+	fake := &runtime.Fake{}
+	e := testEngine(t, fake)
+	if err := e.Logs(t.Context(), "blog", "", true, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(fake.Calls[0], "--since") {
+		t.Errorf("empty since should omit --since: %v", fake.Calls[0])
 	}
 }
 

@@ -53,6 +53,28 @@ func TestBuildPlanSingleHTTP(t *testing.T) {
 	}
 }
 
+func TestBuildPlanCustomHostname(t *testing.T) {
+	decl := &store.ProxySpec{Hostname: "cache"}
+	// Primary service uses the custom subdomain; the internal Alias stays
+	// stack-based (redis-svc.blog), only the public URL changes.
+	p := BuildPlan("blog", decl, []compose.ServiceInfo{svc("web", 80)}, httpPorts, tcpPorts)
+	if len(p.Routes) != 1 || p.Routes[0].Hostname != "cache.localhost" {
+		t.Fatalf("custom hostname should route cache.localhost, got %+v", p.Routes)
+	}
+	if p.Routes[0].Alias != "web.blog" {
+		t.Errorf("network alias should stay stack-based, got %q", p.Routes[0].Alias)
+	}
+}
+
+func TestBuildPlanCustomHostnameSubdomains(t *testing.T) {
+	decl := &store.ProxySpec{Hostname: "shop"}
+	p := BuildPlan("stack1", decl, []compose.ServiceInfo{svc("web", 80), svc("api", 3000)}, httpPorts, tcpPorts)
+	if len(p.Routes) != 2 ||
+		p.Routes[0].Hostname != "api.shop.localhost" || p.Routes[1].Hostname != "web.shop.localhost" {
+		t.Fatalf("custom hostname should drive subdomains, got %+v", p.Routes)
+	}
+}
+
 func TestBuildPlanMultiHTTPNoDecl(t *testing.T) {
 	p := BuildPlan("shop", nil, []compose.ServiceInfo{svc("web", 80), svc("api", 3000)}, httpPorts, tcpPorts)
 	if !p.NeedsDecl || p.Primary != "" {

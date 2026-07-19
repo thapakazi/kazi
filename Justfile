@@ -44,6 +44,28 @@ install:
 run *ARGS:
     go run ./cmd/kazi {{ARGS}}
 
+# Build kazi, then launch the interactive TUI dashboard
+tui *ARGS: build
+    ./kazi tui {{ARGS}}
+
 # Remove the built binary
 clean:
     rm -f kazi
+
+# --- Docs site (Astro Starlight, in site/, powered by bun) ---
+
+# Install docs-site dependencies
+docs-install:
+    cd site && just install
+
+# Run the docs dev server with hot reload
+docs-dev:
+    cd site && just dev
+
+# Build the static docs site into site/dist
+docs-build:
+    cd site && just build
+
+# Preview the built docs site locally
+docs-preview:
+    cd site && just preview

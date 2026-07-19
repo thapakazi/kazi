@@ -7,9 +7,18 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/thapakazi/kazi/internal/compose"
 	"github.com/thapakazi/kazi/internal/proxy"
 	"github.com/thapakazi/kazi/internal/store"
 )
+
+// RemoveContainer force-removes a single container by name (`<runtime> rm -f`).
+// It backs the TUI d:remove on an unmanaged loose container — kazi's
+// control-plane cleanup for containers it doesn't otherwise manage. It never
+// touches manifests; the caller is responsible for choosing the target.
+func (e *Engine) RemoveContainer(ctx context.Context, name string) error {
+	return e.frameCmd(compose.Run(e.RT.Cmd(ctx, "rm", "-f", name), e.Out, e.Err), "rm", name)
+}
 
 // composeNames is the search order inside a directory argument.
 var composeNames = []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
@@ -81,6 +90,34 @@ func (e *Engine) Remove(name string) error {
 
 	// Sync proxy to remove any routes for this stack.
 	e.syncProxy(context.Background(), name, "", nil)
+	return nil
+}
+
+// SetHostname sets a stack's custom *.localhost subdomain in its manifest
+// (spec.proxy.hostname) and re-syncs the proxy so a running stack picks up the
+// new URL live (the container's network alias is unchanged). An empty host
+// clears the override (back to the stack name); a non-empty host must be a DNS
+// label. Headless callers can set the same field via `kazi edit`.
+func (e *Engine) SetHostname(name, host string) error {
+	m, err := store.LoadStack(name)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("%w: %s", ErrStackNotFound, name)
+	}
+	if err != nil {
+		return err
+	}
+	if host != "" && !store.IsDNSLabel(host) {
+		return fmt.Errorf("invalid hostname %q: must be a DNS label ([a-z0-9-], max 63 chars)", host)
+	}
+	if m.Spec.Proxy == nil {
+		m.Spec.Proxy = &store.ProxySpec{}
+	}
+	m.Spec.Proxy.Hostname = host
+	if err := store.SaveStack(m); err != nil {
+		return err
+	}
+	// Re-sync so a running stack's route reflects the new hostname immediately.
+	e.syncProxy(context.Background(), "", "", nil)
 	return nil
 }
 

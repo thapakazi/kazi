@@ -6,13 +6,17 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/thapakazi/kazi/internal/engine"
 )
 
 var (
-	runName  string
-	runPorts []string
-	runEnvs  []string
-	runVols  []string
+	runName     string
+	runPorts    []string
+	runEnvs     []string
+	runVols     []string
+	runHost     string
+	runHTTPPort int
 )
 
 var runCmd = &cobra.Command{
@@ -25,7 +29,10 @@ var runCmd = &cobra.Command{
 			return err
 		}
 		image := args[0]
-		name, err := eng.RunImage(cmd.Context(), runName, image, runPorts, runEnvs, runVols)
+		name, err := eng.RunImage(cmd.Context(), runName, image, engine.RunOpts{
+			Ports: runPorts, Envs: runEnvs, Vols: runVols,
+			Hostname: runHost, HTTPPort: runHTTPPort,
+		})
 		if err != nil {
 			return err
 		}
@@ -118,6 +125,8 @@ func init() {
 	runCmd.Flags().StringArrayVarP(&runPorts, "publish", "p", nil, "publish port mapping (hostPort:containerPort)")
 	runCmd.Flags().StringArrayVarP(&runEnvs, "env", "e", nil, "environment variable (K=V)")
 	runCmd.Flags().StringArrayVarP(&runVols, "volume", "v", nil, "volume mount (vol:/path)")
+	runCmd.Flags().StringVar(&runHost, "host", "", "custom *.localhost subdomain (default: stack name)")
+	runCmd.Flags().IntVar(&runHTTPPort, "http-port", 0, "container HTTP port to route (default: auto-detect)")
 
 	ejectCmd.Flags().BoolVar(&ejectAdd, "add", false, "register the ejected stack with kazi add")
 

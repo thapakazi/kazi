@@ -100,6 +100,34 @@ func TestUrls(t *testing.T) {
 	}
 }
 
+// TestUrlsImageStackPinnedPort: an image stack routes via a pinned
+// spec.proxy.http_port (e.g. mailpit's 8025) and is listed by `kazi urls`,
+// honoring a custom spec.proxy.hostname.
+func TestUrlsImageStackPinnedPort(t *testing.T) {
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	m := store.Manifest{APIVersion: "kazi.dev/v1alpha1", Kind: "Stack"}
+	m.Metadata.Name = "malpit"
+	m.Spec.Source.Image = "axllent/mailpit"
+	m.Spec.Proxy = &store.ProxySpec{Hostname: "mailpit", HTTPPort: 8025}
+	if err := store.SaveStack(m); err != nil {
+		t.Fatal(err)
+	}
+	e := testEngine(t, &runtime.Fake{})
+	eps, err := e.Urls(t.Context(), "malpit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ok bool
+	for _, ep := range eps {
+		if ep.Kind == "http" && ep.URL == "https://mailpit.localhost" && ep.Target == "malpit:8025" {
+			ok = true
+		}
+	}
+	if !ok {
+		t.Fatalf("image stack with a pinned port should list its URL, got %+v", eps)
+	}
+}
+
 func TestTrustDarwinCommands(t *testing.T) {
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
 	f := &runtime.Fake{CmdOut: map[string]string{"exec kazi-proxy cat": "CERT"}}

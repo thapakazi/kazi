@@ -25,7 +25,7 @@ type strategy interface {
 	up(ctx context.Context, e *Engine, t target) error
 	down(ctx context.Context, e *Engine, t target, extraArgs ...string) error
 	restart(ctx context.Context, e *Engine, t target) error
-	logs(ctx context.Context, e *Engine, t target, service string, follow bool, tail string) error
+	logs(ctx context.Context, e *Engine, t target, service string, follow bool, tail, since string) error
 }
 
 // strategyFor maps a source kind to its lifecycle strategy. Unknown/empty
@@ -130,13 +130,16 @@ func (composeStrategy) restart(ctx context.Context, e *Engine, t target) error {
 	return nil
 }
 
-func (composeStrategy) logs(ctx context.Context, e *Engine, t target, service string, follow bool, tail string) error {
+func (composeStrategy) logs(ctx context.Context, e *Engine, t target, service string, follow bool, tail, since string) error {
 	args := []string{"logs"}
 	if follow {
 		args = append(args, "-f")
 	}
 	if tail != "" {
 		args = append(args, "--tail", tail)
+	}
+	if since != "" {
+		args = append(args, "--since", since)
 	}
 	if service != "" {
 		args = append(args, service)
@@ -248,7 +251,7 @@ func (imageStrategy) restart(ctx context.Context, e *Engine, t target) error {
 	return nil
 }
 
-func (imageStrategy) logs(ctx context.Context, e *Engine, t target, service string, follow bool, tail string) error {
+func (imageStrategy) logs(ctx context.Context, e *Engine, t target, service string, follow bool, tail, since string) error {
 	args := []string{"logs"}
 	if follow {
 		args = append(args, "-f")
@@ -256,13 +259,20 @@ func (imageStrategy) logs(ctx context.Context, e *Engine, t target, service stri
 	if tail != "" {
 		args = append(args, "--tail", tail)
 	}
+	if since != "" {
+		args = append(args, "--since", since)
+	}
 	args = append(args, imageContainerName(t.name))
 	return e.frameCmd(compose.Run(e.RT.Cmd(ctx, args...), e.Out, e.Err), "logs", t.name)
 }
 
-// imageRoute returns the HTTP port and routability of an image stack, derived
-// from the image's exposed ports.
+// imageRoute returns the HTTP port and routability of an image stack. A pinned
+// spec.proxy.http_port wins (the user declared the HTTP port, e.g. mailpit's
+// 8025); otherwise it's derived from the image's exposed ports.
 func (e *Engine) imageRoute(ctx context.Context, t target) (httpPort int, ok bool) {
+	if t.manifest != nil && t.manifest.Spec.Proxy != nil && t.manifest.Spec.Proxy.HTTPPort != 0 {
+		return t.manifest.Spec.Proxy.HTTPPort, true
+	}
 	out, err := compose.Output(e.RT.Cmd(ctx, "image", "inspect", "--format", "{{json .Config.ExposedPorts}}", t.image))
 	if err != nil {
 		return 0, false
@@ -321,7 +331,7 @@ func (containersStrategy) restart(ctx context.Context, e *Engine, t target) erro
 	return nil
 }
 
-func (containersStrategy) logs(ctx context.Context, e *Engine, t target, service string, follow bool, tail string) error {
+func (containersStrategy) logs(ctx context.Context, e *Engine, t target, service string, follow bool, tail, since string) error {
 	if len(t.containers) == 0 {
 		return fmt.Errorf("stack %q has no adopted containers", t.name)
 	}
@@ -341,6 +351,9 @@ func (containersStrategy) logs(ctx context.Context, e *Engine, t target, service
 	}
 	if tail != "" {
 		args = append(args, "--tail", tail)
+	}
+	if since != "" {
+		args = append(args, "--since", since)
 	}
 	args = append(args, target)
 	return e.frameCmd(compose.Run(e.RT.Cmd(ctx, args...), e.Out, e.Err), "logs", t.name)
