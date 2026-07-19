@@ -20,6 +20,7 @@ type styles struct {
 	keybarKey      lipgloss.Style
 	helpBox        lipgloss.Style
 	modalBox       lipgloss.Style
+	logFull        lipgloss.Style
 	toast          lipgloss.Style
 	stackLabel     lipgloss.Style
 	actionBar      lipgloss.Style
@@ -51,6 +52,10 @@ func defaultStyles() styles {
 		helpBox:        lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 2),
 		modalBox: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 3).
 			BorderForeground(lipgloss.Color("203")),
+		// logFull is the near-fullscreen Logs popup: rounded border + inner
+		// padding, accented so it reads as a floating panel over the dashboard.
+		logFull: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).
+			BorderForeground(lipgloss.Color("12")),
 		toast: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).
 			Background(lipgloss.Color("214")).Padding(0, 1),
 		stackLabel:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13")),

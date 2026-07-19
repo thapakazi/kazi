@@ -38,6 +38,12 @@ type describeMsg struct {
 	detail engine.StackDetail
 }
 
+// envMsg carries each container's environment for the selected stack (Env tab).
+type envMsg struct {
+	stack string
+	env   []engine.ContainerEnv
+}
+
 // statusbarMsg carries the always-on doctor-lite signals.
 type statusbarMsg struct {
 	runtime string

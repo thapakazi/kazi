@@ -60,13 +60,15 @@ func (m Model) renderModal() string {
 		b.WriteString("\n" + m.st.keybarKey.Render("esc") + " cancel")
 		return m.st.modalBox.Render(b.String())
 	}
-	if m.modal.mkind == modalPicker || m.modal.mkind == modalMenu || m.modal.mkind == modalEditPick {
+	if m.modal.mkind == modalPicker || m.modal.mkind == modalMenu || m.modal.mkind == modalEditPick || m.modal.mkind == modalLogService || m.modal.mkind == modalEnvService {
 		verb := "open"
 		switch m.modal.mkind {
 		case modalMenu:
 			verb = "run"
 		case modalEditPick:
 			verb = "edit"
+		case modalLogService, modalEnvService:
+			verb = "filter"
 		}
 		var b strings.Builder
 		b.WriteString(m.modal.prompt + "\n\n")
@@ -162,15 +164,18 @@ func (m Model) keybarSegs() (string, []segment) {
 	// On the Logs tab the keybar shows the log controls; elsewhere the
 	// selection's contextual actions.
 	hints := contextualKeys(m.currentSelection())
-	if m.onLogsTab() {
+	switch {
+	case m.onLogsTab():
 		hints = logKeyHints()
+	case m.onEnvTab():
+		hints = envKeyHints()
 	}
 	for _, h := range hints {
 		sep()
 		b.push("act:"+h.Key, m.st.keybarKey.Render(h.Key)+":"+h.Label)
 	}
 	// n:new — register a stack; a Stacks-mode front door over `kazi add`.
-	if m.mode == modeStacks && !m.onLogsTab() {
+	if m.mode == modeStacks && !m.onLogsTab() && !m.onEnvTab() {
 		sep()
 		b.push("act:n", m.st.keybarKey.Render("n")+":new")
 	}
@@ -214,6 +219,9 @@ func (m Model) renderHelp() string {
 		"  [ / ]        prev / next tab",
 		"  Enter        descend into detail",
 		"",
+		"  c            filter by container (Logs & Env tabs · all ⇄ one service)",
+		"  z            toggle fullscreen logs (Logs tab · Esc exits)",
+		"  Env tab      per-container env (c filter · / search · n next · j/k scroll · y copy)",
 		"  s            stack actions menu (up/down/restart/logs/open/delete)",
 		"  o            open the stack's URL",
 		"  d            remove (stack: down & remove · r deregister · loose: rm -f)",

@@ -50,6 +50,25 @@ func (f fakeEngine) Ps(ctx context.Context) ([]engine.ContainerInfo, error) {
 	return out, nil
 }
 
+func (f fakeEngine) StackEnv(ctx context.Context, name string) ([]engine.ContainerEnv, error) {
+	st, err := f.Status(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	var out []engine.ContainerEnv
+	for _, c := range st.Containers {
+		svc := c.Service
+		if svc == "" {
+			svc = c.Name
+		}
+		out = append(out, engine.ContainerEnv{
+			Service: svc, Name: c.Name,
+			Env: []string{"PATH=/usr/bin", "SVC=" + svc},
+		})
+	}
+	return out, nil
+}
+
 func (f fakeEngine) Status(ctx context.Context, name string) (engine.StackInfo, error) {
 	stacks, _ := f.List(ctx)
 	for _, s := range stacks {

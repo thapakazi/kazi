@@ -77,6 +77,13 @@ func (m Model) View() string {
 	segments = append(segments, bottom)
 	frame := lipgloss.JoinVertical(lipgloss.Left, segments...)
 
+	// The fullscreen Logs popup floats over the dashboard (margins on every
+	// side), giving long log lines the full terminal width while the status bar
+	// and sidebar edges stay visible behind it.
+	if m.onLogsTab() && m.logFullscreen && !m.help {
+		frame = overlay(frame, m.renderLogsFullscreen(), m.width, m.height)
+	}
+
 	// A modal or input form floats over the dashboard rather than replacing it,
 	// so context (which stack, its state) stays visible behind the popup.
 	if m.modal.active {

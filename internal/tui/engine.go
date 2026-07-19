@@ -22,6 +22,10 @@ type Engine interface {
 	Status(ctx context.Context, name string) (engine.StackInfo, error)
 	Describe(ctx context.Context, name string) (engine.StackDetail, error)
 	Urls(ctx context.Context, name string) ([]engine.Endpoint, error)
+
+	// StackEnv returns the environment of every container in a stack (Env tab).
+	// Env is fixed at container creation, so the dashboard caches it per stack.
+	StackEnv(ctx context.Context, name string) ([]engine.ContainerEnv, error)
 	GcDebris(ctx context.Context) int
 	TemplateList() ([]template.Info, error)
 

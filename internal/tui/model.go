@@ -34,11 +34,12 @@ type detailTab int
 const (
 	tabServices detailTab = iota
 	tabLogs
+	tabEnv
 	tabURLs
 	tabConfig
 )
 
-var tabNames = []string{"Services", "Logs", "URLs", "Config"}
+var tabNames = []string{"Services", "Logs", "Env", "URLs", "Config"}
 
 // actionKind identifies a guarded engine action a confirm modal dispatches.
 type actionKind int
@@ -62,6 +63,8 @@ const (
 	modalEditPick               // choose manifest vs compose to edit (e)
 	modalSourceChoose           // transient new-stack source picker (n → c/t/i)
 	modalRemoveChoose           // transient remove/teardown picker (d → d/r)
+	modalLogService             // transient Logs container filter picker (c)
+	modalEnvService             // transient Env container filter picker (c)
 )
 
 // modalState is the active modal. active==false means none is open; while one
@@ -149,6 +152,23 @@ type Model struct {
 	logMatchCur  int
 	logGrouped   bool
 	logScroll    int
+	// logFullscreen expands the Logs viewport into a near-fullscreen popup
+	// (margins on all sides) so long log lines get the full terminal width.
+	logFullscreen bool
+
+	// Env tab: each container's `.Config.Env`, cached per stack (env is fixed at
+	// container creation). envService is the per-container display filter (empty ⇒
+	// all), the Env-tab analogue of the Logs container filter; envScroll offsets
+	// the (client-side) viewport.
+	env        []engine.ContainerEnv
+	envFor     string
+	envService string
+	envScroll  int
+	// Env search mirrors the Logs viewer: incremental /-search over the displayed
+	// (filtered) rows with an n/N match cursor.
+	envSearch    string
+	envSearching bool
+	envMatchCur  int
 
 	// Action panel: captured output of the last lifecycle verb (up/down/restart),
 	// shown in a collapsible bottom bar so compose progress never scribbles over

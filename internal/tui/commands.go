@@ -110,6 +110,19 @@ func urlsCmd(eng Engine, name string) tea.Cmd {
 	}
 }
 
+// envCmd reads every container's environment for one stack (Env tab).
+func envCmd(eng Engine, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+		defer cancel()
+		env, err := eng.StackEnv(ctx, name)
+		if err != nil {
+			return errMsg{err}
+		}
+		return envMsg{stack: name, env: env}
+	}
+}
+
 // describeCmd reads the effective/merged detail for one stack (Config tab).
 func describeCmd(eng Engine, name string) tea.Cmd {
 	return func() tea.Msg {

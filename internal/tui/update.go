@@ -66,6 +66,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detail = msg.detail
 		return m, nil
 
+	case envMsg:
+		// Drop env that arrived after the user moved on to another stack.
+		if msg.stack != m.selectedName() {
+			return m, nil
+		}
+		// First load for a new stack → reset the per-container filter/scroll/search.
+		if msg.stack != m.envFor {
+			m.envService = ""
+			m.envScroll = 0
+			m.envSearch = ""
+			m.envSearching = false
+			m.envMatchCur = 0
+		}
+		m.env = msg.env
+		m.envFor = msg.stack
+		return m, nil
+
 	case templatesMsg:
 		m.templates = msg.templates
 		return m, nil
@@ -127,6 +144,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case actionDoneMsg:
 		m.actionRunning = false
+		// up/down/restart recreate containers, so the cached env is now stale —
+		// invalidate it; the next Env-tab read refetches.
+		m.envFor = ""
 		if msg.err != nil {
 			m.actionTitle = msg.action + " " + msg.stack + " ✗"
 			return m, tea.Batch(
@@ -308,6 +328,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.logSearching {
 		return m.handleLogSearchKey(msg)
 	}
+	// The Env-tab search is likewise its own incremental input mode.
+	if m.envSearching {
+		return m.handleEnvSearchKey(msg)
+	}
 	if m.filtering {
 		return m.handleFilterKey(msg)
 	}
@@ -328,6 +352,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.onLogsTab() && m.logEscape() {
 			return m, nil
 		}
+		// On the Env tab, Esc clears the container filter, then defocuses.
+		if m.onEnvTab() && m.envEscape() {
+			return m, nil
+		}
 		if m.filter != "" {
 			m.filter = ""
 			return m, snapshotCmd(m.eng)
@@ -344,6 +372,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.onLogsTab() {
 		if lm, cmd, ok := m.handleLogKey(msg); ok {
 			return lm, cmd
+		}
+	}
+	// Likewise the Env tab owns its filter/scroll keys.
+	if m.onEnvTab() {
+		if em, cmd, ok := m.handleEnvKey(msg); ok {
+			return em, cmd
 		}
 	}
 
@@ -616,6 +650,13 @@ func (m Model) detailReadCmd() tea.Cmd {
 	case tabLogs:
 		// The Logs tab streams (logSyncCmd); no one-shot read.
 		return nil
+	case tabEnv:
+		// Env is fixed at container creation, so read once per stack and cache;
+		// a restart invalidates the cache (actionDoneMsg clears envFor).
+		if name == m.envFor {
+			return nil
+		}
+		return envCmd(m.eng, name)
 	default:
 		return statusCmd(m.eng, name)
 	}
@@ -639,6 +680,12 @@ func (m Model) desiredLogTarget() (stack, service string) {
 	r := m.selectedRow()
 	if r == nil || r.kind != rowStack || r.stack == nil || r.selKind == selUnmanaged {
 		return "", ""
+	}
+	// Keep the per-container filter sticky while the same stack stays selected —
+	// otherwise every poll's logSync would tear the scoped stream down and rebuild
+	// the combined view. Switching stacks drops the filter back to all-services.
+	if r.label == m.logStack {
+		return r.label, m.logService
 	}
 	return r.label, ""
 }

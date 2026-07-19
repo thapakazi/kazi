@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -110,13 +111,78 @@ func (m Model) logMatchIndices() []int {
 	return logSearchMatches(m.logDisplayLines(), m.logSearch)
 }
 
-// logViewportHeight is the number of log rows the pane can show.
+// logViewportHeight is the number of log rows the pane can show — in the
+// fullscreen popup that's the box interior; otherwise the detail body height,
+// both minus the tab/strip chrome. Scroll math (logMaxTop, logTop) reads this,
+// so following and clamping stay correct across the mode toggle.
 func (m Model) logViewportHeight() int {
-	h := m.bodyHeight() - logChromeRows
+	var h int
+	if m.logFullscreen {
+		h = m.logFullContentHeight() - logChromeRows
+	} else {
+		h = m.bodyHeight() - logChromeRows
+	}
 	if h < 1 {
 		h = 1
 	}
 	return h
+}
+
+// Fullscreen popup geometry. logFullMargin is the gap left on every side so the
+// box floats over the dashboard rather than blanking it. The rounded border
+// adds 1 cell per side; Padding(1,2) adds 1 row / 2 cols of interior padding.
+const (
+	logFullMarginX = 3
+	logFullMarginY = 2
+	logFullBorder  = 1
+	logFullPadX    = 2
+	logFullPadY    = 1
+)
+
+// logFullBoxSize is the outer size of the popup (border included), derived from
+// the terminal size less the all-sides margin.
+func (m Model) logFullBoxSize() (w, h int) {
+	w = m.width - 2*logFullMarginX
+	h = m.height - 2*logFullMarginY
+	if w < 20 {
+		w = 20
+	}
+	if h < 6 {
+		h = 6
+	}
+	return w, h
+}
+
+// logFullContentWidth / logFullContentHeight are the interior text dimensions of
+// the popup (inside border + padding) that the Logs body renders into.
+func (m Model) logFullContentWidth() int {
+	w, _ := m.logFullBoxSize()
+	return w - 2*logFullBorder - 2*logFullPadX
+}
+
+func (m Model) logFullContentHeight() int {
+	_, h := m.logFullBoxSize()
+	return h - 2*logFullBorder - 2*logFullPadY
+}
+
+// renderLogsFullscreen draws the Logs viewer as a centered, bordered popup. It
+// reuses the tabbed detail body (so the tab header, stack label, and control
+// strip all show) sized to the box interior; overlay() composites it centered,
+// which lands it inside the margin on every side.
+func (m Model) renderLogsFullscreen() string {
+	boxW, boxH := m.logFullBoxSize()
+	innerW := m.logFullContentWidth()
+
+	var content string
+	if r := m.selectedRow(); r != nil && r.stack != nil {
+		content = m.renderTabs(*r.stack, innerW)
+	} else {
+		content = m.renderLogsPane(innerW)
+	}
+	return m.st.logFull.
+		Width(boxW - 2*logFullBorder).
+		Height(boxH - 2*logFullBorder).
+		Render(content)
 }
 
 // logMaxTop is the largest valid top-line index (bottom-pinned position).
@@ -271,8 +337,96 @@ func (m Model) handleLogKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 		m.logFollow = true
 		m.logScroll = m.logMaxTop()
 		return m, nil, true
+	case "z":
+		// Toggle the near-fullscreen log popup. Scroll/follow state carries over
+		// unchanged; only the viewport height (and thus max-top) differs.
+		m.logFullscreen = !m.logFullscreen
+		return m, nil, true
+	case "c":
+		// Open the container filter picker (scopes the stream to one service).
+		lm, cmd := m.openLogServicePicker()
+		return lm, cmd, true
 	}
 	return m, nil, false
+}
+
+// selectedServiceNames is the sorted, distinct set of services (or container
+// names, when a container declares no compose service) for the selected stack.
+// It mirrors renderServices' container source so the Logs/Env filter pickers
+// match the Services tab. Empty when nothing is loaded yet.
+func (m Model) selectedServiceNames() []string {
+	r := m.selectedRow()
+	if r == nil || r.stack == nil {
+		return nil
+	}
+	containers := r.stack.Containers
+	if m.statusName == r.stack.Name && len(m.statusInfo.Containers) > 0 {
+		containers = m.statusInfo.Containers
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, c := range containers {
+		svc := c.Service
+		if svc == "" {
+			svc = c.Name
+		}
+		if svc == "" || seen[svc] {
+			continue
+		}
+		seen[svc] = true
+		names = append(names, svc)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// buildServicePicker raises a transient container filter menu: "all services"
+// plus one row per service, with the cursor pre-parked on the active filter.
+// Shared by the Logs (kind=modalLogService) and Env (modalEnvService) tabs; the
+// per-kind choose handler applies the pick. current is the active filter value.
+func (m Model) buildServicePicker(kind modalKind, prompt, current string) (Model, tea.Cmd) {
+	names := m.selectedServiceNames()
+	if len(names) == 0 {
+		return m, m.setToast("no containers to filter yet")
+	}
+	opts := []string{"all services"}
+	vals := []string{""}
+	cursor := 0
+	for i, n := range names {
+		opts = append(opts, n)
+		vals = append(vals, n)
+		if n == current {
+			cursor = i + 1
+		}
+	}
+	m.modal = modalState{
+		active: true, mkind: kind, prompt: prompt,
+		options: opts, values: vals, cursor: cursor,
+	}
+	return m, nil
+}
+
+// openLogServicePicker raises the container filter menu for the Logs tab.
+// Selecting one restarts the stream scoped to it (logServiceChoose).
+func (m Model) openLogServicePicker() (Model, tea.Cmd) {
+	return m.buildServicePicker(modalLogService, m.logStack+" — logs: filter container", m.logService)
+}
+
+// logServiceChoose applies the picked container filter: it restarts the stream
+// scoped to that service (empty ⇒ the combined view), resetting the buffer the
+// way tail/since changes do. A no-op when the pick matches the active filter.
+func (m Model) logServiceChoose(i int) (tea.Model, tea.Cmd) {
+	if i < 0 || i >= len(m.modal.values) {
+		m.modal = modalState{}
+		return m, nil
+	}
+	svc := m.modal.values[i]
+	m.modal = modalState{}
+	if svc == m.logService {
+		return m, nil
+	}
+	m.logService = svc
+	return m, m.restartLogStreamCmd()
 }
 
 // handleLogSearchKey collects incremental log-search input. Enter locks the
@@ -314,6 +468,9 @@ func (m *Model) logEscape() bool {
 	case m.logSearch != "":
 		m.logSearch = ""
 		m.logMatchCur = 0
+		return true
+	case m.logFullscreen:
+		m.logFullscreen = false
 		return true
 	case m.logGrouped:
 		m.logGrouped = false
@@ -366,6 +523,9 @@ func (m Model) logControlStrip() string {
 	if m.logSince != "" && m.logSince != "all" {
 		parts = append(parts, "since:"+m.logSince)
 	}
+	if m.logService != "" {
+		parts = append(parts, "svc:"+m.logService)
+	}
 	switch {
 	case m.logSearching:
 		parts = append(parts, "/"+m.logSearch+"▏")
@@ -386,8 +546,9 @@ func (m Model) logControlStrip() string {
 // logKeyHints are the contextual keybar actions shown while on the Logs tab.
 func logKeyHints() []keyHint {
 	return []keyHint{
-		{"f", "follow"}, {"t", "tail"}, {"s", "since"}, {"/", "search"},
-		{"n", "next"}, {"p", "group"}, {"y", "copy"}, {"Y", "copy-all"},
+		{"f", "follow"}, {"t", "tail"}, {"s", "since"}, {"c", "container"},
+		{"/", "search"}, {"n", "next"}, {"p", "group"}, {"z", "full"},
+		{"y", "copy"}, {"Y", "copy-all"},
 	}
 }
 

@@ -85,6 +85,8 @@ func (m Model) renderTabs(s engine.StackInfo, width int) string {
 		body = m.renderServices(s)
 	case tabLogs:
 		body = m.renderLogs(width)
+	case tabEnv:
+		body = m.renderEnv(width)
 	case tabURLs:
 		body = m.renderURLs(s)
 	case tabConfig:

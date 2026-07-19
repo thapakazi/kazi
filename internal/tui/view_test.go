@@ -63,6 +63,7 @@ func TestURLsTab(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // blog
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")}) // focus detail
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")}) // Logs
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")}) // Env
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")}) // URLs
 	waitForContains(t, tm, "URLs", "https://blog.localhost")
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})

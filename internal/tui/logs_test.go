@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -196,6 +197,117 @@ func TestGroupToggle(t *testing.T) {
 	m = press(m, keyRunes("p"))
 	if m.logGrouped {
 		t.Fatal("p should toggle grouping off")
+	}
+}
+
+func TestFullscreenToggleAndEscape(t *testing.T) {
+	m := logsModel(logLinesN(50))
+	m.width, m.height = 120, 40
+	if m.logFullscreen {
+		t.Fatal("fullscreen should default off")
+	}
+	// Windowed, log text is confined to the detail pane (terminal minus the
+	// sidebar, divider, and padding).
+	windowed := m.detailWidth() - detailBorder - detailPadL*2
+
+	m = press(m, keyRunes("z"))
+	if !m.logFullscreen {
+		t.Fatal("z should enter fullscreen")
+	}
+	// The popup reclaims the sidebar's columns, so long log lines get more width.
+	if full := m.logFullContentWidth(); full <= windowed {
+		t.Fatalf("fullscreen width = %d, want > %d", full, windowed)
+	}
+	// The popup renders (bordered box, non-empty) and is wired into View.
+	if m.renderLogsFullscreen() == "" {
+		t.Fatal("renderLogsFullscreen produced no output")
+	}
+	if !strings.Contains(m.View(), "follow:") {
+		t.Fatal("View should show the fullscreen log control strip")
+	}
+
+	// Esc unwinds fullscreen before defocusing (search/grouping are inactive).
+	m = press(m, special(tea.KeyEsc))
+	if m.logFullscreen {
+		t.Fatal("Esc should exit fullscreen")
+	}
+	if m.focus != focusDetail {
+		t.Fatal("Esc that exits fullscreen should keep detail focus")
+	}
+
+	// z is a plain toggle.
+	m = press(m, keyRunes("z"))
+	m = press(m, keyRunes("z"))
+	if m.logFullscreen {
+		t.Fatal("z twice should return to windowed")
+	}
+}
+
+// onLogsFor parks a loaded model on the Logs tab (detail focused) for a real
+// sidebar stack, wiring logStack the way the log-sync loop would.
+func onLogsFor(t *testing.T, name string) Model {
+	t.Helper()
+	m := selectStack(t, loaded(t), name)
+	m.tab = tabLogs
+	m.focus = focusDetail
+	m.logStack = name
+	return m
+}
+
+func TestContainerFilterPickerScopesStream(t *testing.T) {
+	m := onLogsFor(t, "blog")
+
+	// c opens the transient container picker: "all services" + each service.
+	m = press(m, keyRunes("c"))
+	if !m.modal.active || m.modal.mkind != modalLogService {
+		t.Fatalf("c should open the container picker, got %+v", m.modal)
+	}
+	if got := strings.Join(m.modal.options, ","); got != "all services,db,web" {
+		t.Fatalf("picker options = %q, want all+db+web", got)
+	}
+
+	// Number-select "db" (option 2) → stream scopes to that service.
+	m = press(m, keyRunes("2"))
+	if m.modal.active {
+		t.Fatal("choosing a container should close the picker")
+	}
+	if m.logService != "db" {
+		t.Fatalf("logService = %q, want db", m.logService)
+	}
+	if !strings.Contains(m.logControlStrip(), "svc:db") {
+		t.Fatalf("control strip = %q, want svc:db", m.logControlStrip())
+	}
+
+	// The filter is sticky while blog stays selected (poll loop must not reset it).
+	if _, svc := m.desiredLogTarget(); svc != "db" {
+		t.Fatalf("desired service = %q, want db (sticky)", svc)
+	}
+	// Re-opening parks the cursor on the active filter.
+	m = press(m, keyRunes("c"))
+	if m.modal.values[m.modal.cursor] != "db" {
+		t.Fatalf("cursor value = %q, want db", m.modal.values[m.modal.cursor])
+	}
+	m = press(m, special(tea.KeyEsc)) // close picker
+
+	// Switching stacks drops the filter back to the combined view.
+	m.sel = 0 // ALL / different row
+	m = selectStack(t, m, "redis")
+	if _, svc := m.desiredLogTarget(); svc != "" {
+		t.Fatalf("desired service after stack switch = %q, want all", svc)
+	}
+}
+
+func TestContainerFilterAllResetsToCombined(t *testing.T) {
+	m := onLogsFor(t, "blog")
+	m.logService = "web"
+	m = press(m, keyRunes("c"))
+	// Option 1 is "all services" (value "").
+	m = press(m, keyRunes("1"))
+	if m.logService != "" {
+		t.Fatalf("logService = %q, want empty (all)", m.logService)
+	}
+	if strings.Contains(m.logControlStrip(), "svc:") {
+		t.Fatalf("control strip should drop svc: on all, got %q", m.logControlStrip())
 	}
 }
 
