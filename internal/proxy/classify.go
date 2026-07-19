@@ -146,4 +146,3 @@ func BuildPlan(stack string, decl *store.ProxySpec, svcs []compose.ServiceInfo, 
 	sort.Slice(plan.Routes, func(i, j int) bool { return plan.Routes[i].Hostname < plan.Routes[j].Hostname })
 	return plan
 }
-

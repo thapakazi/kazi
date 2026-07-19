@@ -24,6 +24,14 @@ fmt:
 # Format, vet, and test (full pre-commit check)
 check: fmt vet test
 
+# Build a local release snapshot with GoReleaser (no publish; requires goreleaser)
+release-snapshot:
+    goreleaser release --snapshot --clean
+
+# Print the version metadata baked into a locally built binary
+version: build
+    ./kazi --version
+
 # Run integration tests (requires a running Docker daemon)
 test-integration:
     go test -tags integration ./internal/engine/ -v
