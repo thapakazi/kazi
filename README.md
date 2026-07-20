@@ -22,13 +22,13 @@ kazi is a compose-preferred, runtime-agnostic local stack manager: it lets you s
 ### Homebrew (macOS & Linux)
 
 ```sh
-brew install thapakazi/kazi/kazi
+brew install thapakazi/tools/kazi
 ```
 
 Or tap first, then install:
 
 ```sh
-brew tap thapakazi/kazi
+brew tap thapakazi/tools
 brew install kazi
 ```
 

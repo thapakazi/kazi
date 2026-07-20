@@ -67,14 +67,14 @@ release:
   draft: false
   prerelease: auto
 
-# Homebrew tap — publishes a cask to github.com/thapakazi/homebrew-kazi
-# so users can `brew install thapakazi/kazi/kazi` (or tap first, then install).
+# Homebrew tap — publishes a cask to github.com/thapakazi/homebrew-tools
+# so users can `brew install thapakazi/tools/kazi` (or tap first, then install).
 # GoReleaser generates on_macos/on_linux blocks, so the cask covers both.
 homebrew_casks:
   - name: kazi
     repository:
       owner: thapakazi
-      name: homebrew-kazi
+      name: homebrew-tools
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://thapakazi.github.io/kazi"
