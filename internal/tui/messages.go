@@ -154,18 +154,17 @@ type tryValuesMsg struct {
 	values []engine.TryValue
 }
 
-// editTargetsMsg carries the resolved edit targets for a stack (e:edit): one
-// target opens the editor directly; two open a manifest/compose picker.
+// editTargetsMsg carries a stack's resolved edit targets for the o-e open flow:
+// they map to config/project choices, one opening the editor directly and two
+// opening a picker.
 type editTargetsMsg struct {
 	stack   string
 	targets []engine.EditTarget
 	err     error
 }
 
-// editorReturnedMsg fires when the suspended $EDITOR process exits; err is the
-// editor's own exit error (treated as an abort).
-type editorReturnedMsg struct{ err error }
-
-// editValidatedMsg carries the post-save validation result for the edited
-// target: nil ⇒ keep, non-nil ⇒ re-edit-or-discard.
-type editValidatedMsg struct{ err error }
+// editorOpenedMsg reports the result of launching the detached external editor.
+type editorOpenedMsg struct {
+	path string
+	err  error
+}

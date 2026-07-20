@@ -335,15 +335,21 @@ func (multiURLEngine) Urls(_ context.Context, name string) ([]engine.Endpoint, e
 	return nil, nil
 }
 
-// TestOpenSingleURL: o on a stack with exactly one HTTP URL opens it directly.
+// TestOpenSingleURL: o → b on a stack with exactly one HTTP URL opens it
+// directly.
 func TestOpenSingleURL(t *testing.T) {
 	opened := captureOpen(t)
 	m := selectStack(t, loaded(t), "blog") // fixture blog has 1 http (web), 1 tcp
-	// o dispatches the URL resolve command...
-	nm, cmd := m.Update(keyRunes("o"))
+	// o opens the transient open menu...
+	m = press(m, keyRunes("o"))
+	if !m.modal.active || m.modal.mkind != modalOpenChoose {
+		t.Fatalf("o should open the open menu, got %+v", m.modal)
+	}
+	// ...b dispatches the URL resolve command...
+	nm, cmd := m.Update(keyRunes("b"))
 	m = nm.(Model)
 	if cmd == nil {
-		t.Fatal("o produced no command")
+		t.Fatal("o-b produced no command")
 	}
 	// ...which yields an openResolvedMsg; a single URL opens directly.
 	nm, openCmd := m.Update(cmd())
@@ -360,13 +366,14 @@ func TestOpenSingleURL(t *testing.T) {
 	}
 }
 
-// TestOpenMultipleURLsPicker: o with several HTTP URLs opens a picker; Enter
-// opens the highlighted one.
+// TestOpenMultipleURLsPicker: o → b with several HTTP URLs opens a picker;
+// Enter opens the highlighted one.
 func TestOpenMultipleURLsPicker(t *testing.T) {
 	opened := captureOpen(t)
 	m := loadedWith(t, multiURLEngine{})
 	m = selectStack(t, m, "blog")
-	nm, cmd := m.Update(keyRunes("o"))
+	m = press(m, keyRunes("o"))
+	nm, cmd := m.Update(keyRunes("b"))
 	nm, _ = nm.(Model).Update(cmd())
 	m = nm.(Model)
 	if !m.modal.active || m.modal.mkind != modalPicker {

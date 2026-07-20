@@ -47,10 +47,8 @@ type actionKind int
 const (
 	actNone actionKind = iota
 	actDelete
-	actKeep      // promote a watched ephemeral stack (k:keep)
-	actGc        // reclaim a watched ephemeral stack (g:gc)
-	actEditRetry // re-open $EDITOR after an invalid save; cancel discards
-	actRestart   // restart a running stack to apply an edit
+	actKeep // promote a watched ephemeral stack (k:keep)
+	actGc   // reclaim a watched ephemeral stack (g:gc)
 )
 
 // modalKind distinguishes a yes/no confirm from a list picker.
@@ -60,7 +58,8 @@ const (
 	modalConfirm      modalKind = iota
 	modalPicker                 // choose a URL to open
 	modalMenu                   // stack quick-actions (s)
-	modalEditPick               // choose manifest vs compose to edit (e)
+	modalOpenChoose             // transient open menu (o → b browser / e editor)
+	modalEditOpen               // choose config vs project to open in $EDITOR (o → e)
 	modalSourceChoose           // transient new-stack source picker (n → c/t/i)
 	modalRemoveChoose           // transient remove/teardown picker (d → d/r)
 	modalLogService             // transient Logs container filter picker (c)
@@ -204,14 +203,6 @@ type Model struct {
 	// in the next snapshot (a freshly created/tried stack).
 	form          formState
 	pendingSelect string
-
-	// Edit flow (e): the resolved targets (for the manifest/compose picker), the
-	// target currently open in $EDITOR, its original bytes (for abort-restore),
-	// and the stack being edited. The editor suspends via tea.ExecProcess.
-	editStack   string
-	editTargets []engine.EditTarget
-	editTarget  engine.EditTarget
-	editOrig    []byte
 
 	// watchStack is the ephemeral stack most recently launched via the try form;
 	// while it's the selection, k:keep / g:gc are offered on it.

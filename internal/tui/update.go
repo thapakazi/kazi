@@ -215,58 +215,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case editTargetsMsg:
+		// o-e: resolved config/project targets → open one in the detached editor,
+		// or a picker when both a config and a project are available.
 		if msg.err != nil {
-			return m, m.setToast("edit: " + msg.err.Error())
+			return m, m.setToast("open: " + msg.err.Error())
 		}
-		m.editStack = msg.stack
-		m.editTargets = msg.targets
-		switch len(msg.targets) {
+		tgts := editOpenTargets(msg.targets)
+		switch len(tgts) {
 		case 0:
-			return m, m.setToast("edit: nothing to edit for " + msg.stack)
+			return m, m.setToast("nothing to open for " + msg.stack)
 		case 1:
-			return m.beginEdit(msg.stack, msg.targets[0])
+			return m, editorOpen(tgts[0].path)
 		default:
-			opts := make([]string, len(msg.targets))
-			vals := make([]string, len(msg.targets))
-			for i, t := range msg.targets {
-				opts[i] = fmt.Sprintf("%-9s %s", t.Kind, t.Path)
-				vals[i] = t.Kind
+			opts := make([]string, len(tgts))
+			vals := make([]string, len(tgts))
+			for i, t := range tgts {
+				opts[i] = fmt.Sprintf("%-8s %s", t.label, t.path)
+				vals[i] = t.path
 			}
-			m.modal = modalState{active: true, mkind: modalEditPick,
-				prompt: "edit which file for " + msg.stack + "?", options: opts, values: vals}
+			m.modal = modalState{active: true, mkind: modalEditOpen,
+				prompt: "open which for " + msg.stack + "?", options: opts, values: vals}
 			return m, nil
 		}
 
-	case editorReturnedMsg:
-		// A non-zero editor exit is treated as an abort: restore and write nothing.
+	case editorOpenedMsg:
 		if msg.err != nil {
-			m.restoreEdit()
-			path := m.editTarget.Path
-			m.clearEdit()
-			return m, m.setToast("edit aborted (editor error); " + path + " restored")
+			return m, m.setToast("open failed: " + msg.err.Error())
 		}
-		return m, editValidateCmd(m.editTarget)
-
-	case editValidatedMsg:
-		if msg.err != nil {
-			// Invalid save → re-edit (y) or discard (n, restores original).
-			m.modal = modalState{active: true, mkind: modalConfirm, action: actEditRetry, stack: m.editStack,
-				prompt: "invalid: " + msg.err.Error() + "\n\nre-edit? (y re-opens · n discards changes)"}
-			return m, nil
-		}
-		stack, kind := m.editStack, m.editTarget.Kind
-		running := false
-		if r := m.rowFor(stack); r != nil {
-			running = r.running > 0
-		}
-		m.clearEdit()
-		cmds := []tea.Cmd{m.setToast("saved " + kind + " for " + stack), snapshotCmd(m.eng)}
-		// Running stack: offer a restart to apply (kazi never silently recreates).
-		if running {
-			m.modal = modalState{active: true, mkind: modalConfirm, action: actRestart, stack: stack,
-				prompt: fmt.Sprintf("%q is running — restart now to apply the edit?", stack)}
-		}
-		return m, tea.Batch(cmds...)
+		return m, m.setToast("opened " + msg.path + " in editor")
 
 	case openResolvedMsg:
 		switch len(msg.choices) {
