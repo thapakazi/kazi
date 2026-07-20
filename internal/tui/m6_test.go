@@ -3,8 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -604,105 +602,101 @@ func TestTryFormMustChangeBlocksThenComposesSets(t *testing.T) {
 	}
 }
 
-// --- Edit flow (e) ----------------------------------------------------------
+// --- Open-in-editor flow (o → e) --------------------------------------------
 
-// editEngine returns configurable edit targets for the edit-flow tests.
-type editEngine struct {
-	fakeEngine
-	targets []engine.EditTarget
-}
-
-func (e editEngine) EditTargets(string) ([]engine.EditTarget, error) { return e.targets, nil }
-
-// stubEditor replaces the $EDITOR suspend with an immediate no-op success.
-func stubEditor(t *testing.T) {
+// captureEditor swaps the editor launcher for a recorder for the duration of a
+// test, returning the slice of paths it was asked to open. The recorded path is
+// captured when the command is built (during Update), independent of the real
+// $EDITOR and of whether it would detach or suspend.
+func captureEditor(t *testing.T) *[]string {
 	t.Helper()
-	prev := editorExec
-	editorExec = func(string) tea.Cmd { return func() tea.Msg { return editorReturnedMsg{err: nil} } }
-	t.Cleanup(func() { editorExec = prev })
+	var opened []string
+	prev := editorOpen
+	editorOpen = func(p string) tea.Cmd {
+		opened = append(opened, p)
+		return func() tea.Msg { return editorOpenedMsg{path: p} }
+	}
+	t.Cleanup(func() { editorOpen = prev })
+	return &opened
 }
 
-func TestEditPickerForComposeStack(t *testing.T) {
-	m := selectStack(t, loaded(t), "blog") // fake gives blog manifest+compose
+// TestOpenMenuOffersEditor: o opens the transient open menu; e resolves the
+// stack's edit targets.
+func TestOpenMenuOffersEditor(t *testing.T) {
+	m := selectStack(t, loaded(t), "blog")
+	m = press(m, keyRunes("o"))
+	if !m.modal.active || m.modal.mkind != modalOpenChoose {
+		t.Fatalf("o should open the open menu, got %+v", m.modal)
+	}
 	nm, cmd := m.Update(keyRunes("e"))
 	m = nm.(Model)
 	if cmd == nil {
-		t.Fatal("e should resolve edit targets")
+		t.Fatal("o-e should resolve edit targets")
 	}
+}
+
+// TestOpenEditorPickerForComposeStack: o-e on a compose-backed stack offers a
+// config-vs-project picker (manifest file + compose directory).
+func TestOpenEditorPickerForComposeStack(t *testing.T) {
+	m := selectStack(t, loaded(t), "blog") // fake gives blog manifest+compose
+	m = press(m, keyRunes("o"))
+	nm, cmd := m.Update(keyRunes("e"))
+	m = nm.(Model)
 	nm, _ = m.Update(cmd()) // editTargetsMsg with 2 targets → picker
 	m = nm.(Model)
-	if !m.modal.active || m.modal.mkind != modalEditPick {
-		t.Fatalf("compose-backed stack should open the edit picker, got %+v", m.modal)
+	if !m.modal.active || m.modal.mkind != modalEditOpen {
+		t.Fatalf("compose-backed stack should open the config/project picker, got %+v", m.modal)
 	}
-	if len(m.modal.values) != 2 || m.modal.values[0] != "manifest" || m.modal.values[1] != "compose" {
-		t.Fatalf("picker should offer manifest+compose, got %v", m.modal.values)
+	if len(m.modal.values) != 2 {
+		t.Fatalf("picker should offer config+project, got %v", m.modal.values)
 	}
-}
-
-func TestEditDirectForSingleTarget(t *testing.T) {
-	stubEditor(t)
-	// A real, valid manifest file so beginEdit's read + validate succeed.
-	dir := t.TempDir()
-	path := filepath.Join(dir, "api.yaml")
-	os.WriteFile(path, []byte("apiVersion: kazi.dev/v1alpha1\nkind: Stack\nmetadata:\n  name: api\nspec:\n  source:\n    compose: /x\n"), 0o644)
-	ok := func(context.Context) error { return nil }
-	eng := editEngine{targets: []engine.EditTarget{{Path: path, Kind: "manifest", Validate: ok}}}
-
-	m := selectStack(t, loadedWith(t, eng), "api") // api is stopped in the fixture
-	nm, cmd := m.Update(keyRunes("e"))
-	m = nm.(Model)
-	nm, cmd = m.Update(cmd()) // single target → beginEdit → editorExec (stubbed)
-	m = nm.(Model)
-	if m.modal.active {
-		t.Fatal("single target should skip the picker")
-	}
-	if m.editTarget.Path != path {
-		t.Fatalf("editing target = %q, want %q", m.editTarget.Path, path)
-	}
-	// Editor returns → validate → valid → saved (api is stopped, no restart modal).
-	nm, cmd = m.Update(cmd())
-	m = nm.(Model)
-	nm, _ = m.Update(cmd()) // editValidatedMsg{nil}
-	m = nm.(Model)
-	if m.modal.active {
-		t.Fatalf("a valid edit of a stopped stack should not prompt restart, got %+v", m.modal)
-	}
-	if m.editStack != "" {
-		t.Fatal("edit state should be cleared after a successful save")
+	// config is the manifest file; project is the compose file's directory.
+	if m.modal.values[0] != "/cfg/stacks/blog.yaml" || m.modal.values[1] != "/tmp/blog" {
+		t.Fatalf("picker paths = %v, want [/cfg/stacks/blog.yaml /tmp/blog]", m.modal.values)
 	}
 }
 
-func TestEditInvalidOffersRetry(t *testing.T) {
-	stubEditor(t)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "api.yaml")
-	orig := []byte("apiVersion: kazi.dev/v1alpha1\nkind: Stack\nmetadata:\n  name: api\nspec:\n  source:\n    compose: /x\n")
-	os.WriteFile(path, orig, 0o644)
-	bad := func(context.Context) error { return context.DeadlineExceeded }
-	eng := editEngine{targets: []engine.EditTarget{{Path: path, Kind: "manifest", Validate: bad}}}
-
-	m := selectStack(t, loadedWith(t, eng), "api")
+// TestOpenEditorDirectForConfigOnly: o-e on a manifest-only stack launches the
+// detached editor on the config file directly, skipping the picker.
+func TestOpenEditorDirectForConfigOnly(t *testing.T) {
+	opened := captureEditor(t)
+	m := selectStack(t, loaded(t), "api") // manifest only (not compose-backed)
+	m = press(m, keyRunes("o"))
 	nm, cmd := m.Update(keyRunes("e"))
 	m = nm.(Model)
-	nm, cmd = m.Update(cmd()) // beginEdit → editorExec
+	nm, openC := m.Update(cmd()) // single target → open directly
 	m = nm.(Model)
-	nm, cmd = m.Update(cmd()) // editorReturnedMsg → validate
-	m = nm.(Model)
-	nm, _ = m.Update(cmd()) // editValidatedMsg{err} → retry modal
-	m = nm.(Model)
-	if !m.modal.active || m.modal.action != actEditRetry {
-		t.Fatalf("invalid save should offer re-edit, got %+v", m.modal)
+	if m.modal.active {
+		t.Fatalf("single target should skip the picker, got %+v", m.modal)
 	}
-	// Decline (n) → discard: original restored, edit state cleared.
-	os.WriteFile(path, []byte("garbage"), 0o644) // simulate the bad edit on disk
-	nm, _ = m.Update(keyRunes("n"))
-	m = nm.(Model)
-	got, _ := os.ReadFile(path)
-	if string(got) != string(orig) {
-		t.Fatalf("declining re-edit should restore the original, got %q", got)
+	if openC == nil {
+		t.Fatal("single target should dispatch a detached editor open")
 	}
-	if m.editStack != "" {
-		t.Fatal("edit state should be cleared after discard")
+	openC() // runs editorOpen
+	if len(*opened) != 1 || (*opened)[0] != "/cfg/stacks/api.yaml" {
+		t.Fatalf("opened = %v, want [/cfg/stacks/api.yaml]", *opened)
+	}
+}
+
+// TestOpenEditorChooseProject: picking "project" from the o-e picker launches
+// the detached editor on the compose directory; the TUI is never suspended.
+func TestOpenEditorChooseProject(t *testing.T) {
+	opened := captureEditor(t)
+	m := selectStack(t, loaded(t), "blog")
+	m = press(m, keyRunes("o"))
+	nm, cmd := m.Update(keyRunes("e"))
+	m = nm.(Model)
+	nm, _ = m.Update(cmd()) // → modalEditOpen picker
+	m = nm.(Model)
+	m = press(m, keyRunes("j")) // move to "project"
+	nm, openC := m.Update(keyRunes("enter"))
+	m = nm.(Model)
+	if m.modal.active {
+		t.Fatal("enter should close the picker")
+	}
+	openC() // runs editorOpen
+	if len(*opened) != 1 || (*opened)[0] != "/tmp/blog" {
+		t.Fatalf("opened = %v, want [/tmp/blog]", *opened)
 	}
 }
 

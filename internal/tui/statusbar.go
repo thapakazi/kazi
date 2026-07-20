@@ -42,6 +42,23 @@ func (m Model) renderModal() string {
 		b.WriteString("\n" + m.st.keybarKey.Render("esc") + " cancel")
 		return m.st.modalBox.Render(b.String())
 	}
+	if m.modal.mkind == modalOpenChoose {
+		var selK selKind
+		running := false
+		if r := m.rowFor(m.modal.stack); r != nil {
+			selK, running = r.selKind, r.running > 0
+		}
+		var b strings.Builder
+		b.WriteString(m.modal.prompt + "\n\n")
+		if running {
+			b.WriteString("  " + m.st.keybarKey.Render("b") + "   open URL in the browser\n")
+		}
+		if selK == selStack {
+			b.WriteString("  " + m.st.keybarKey.Render("e") + "   open config / project in $EDITOR (detached)\n")
+		}
+		b.WriteString("\n" + m.st.keybarKey.Render("esc") + " cancel")
+		return m.st.modalBox.Render(b.String())
+	}
 	if m.modal.mkind == modalRemoveChoose {
 		var selK selKind
 		if r := m.rowFor(m.modal.stack); r != nil {
@@ -60,13 +77,11 @@ func (m Model) renderModal() string {
 		b.WriteString("\n" + m.st.keybarKey.Render("esc") + " cancel")
 		return m.st.modalBox.Render(b.String())
 	}
-	if m.modal.mkind == modalPicker || m.modal.mkind == modalMenu || m.modal.mkind == modalEditPick || m.modal.mkind == modalLogService || m.modal.mkind == modalEnvService {
+	if m.modal.mkind == modalPicker || m.modal.mkind == modalMenu || m.modal.mkind == modalEditOpen || m.modal.mkind == modalLogService || m.modal.mkind == modalEnvService {
 		verb := "open"
 		switch m.modal.mkind {
 		case modalMenu:
 			verb = "run"
-		case modalEditPick:
-			verb = "edit"
 		case modalLogService, modalEnvService:
 			verb = "filter"
 		}
@@ -223,12 +238,11 @@ func (m Model) renderHelp() string {
 		"  z            toggle fullscreen logs (Logs tab · Esc exits)",
 		"  Env tab      per-container env (c filter · / search · n next · j/k scroll · y copy)",
 		"  s            stack actions menu (up/down/restart/logs/open/delete)",
-		"  o            open the stack's URL",
+		"  o            open menu — b: URL in browser · e: config/project in $EDITOR",
 		"  d            remove (stack: down & remove · r deregister · loose: rm -f)",
 		"  a            adopt a loose container into a kazi stack",
 		"  `            toggle the actions panel",
 		"  n            new stack (compose/template/image · ←/→ picks source)",
-		"               e  edit manifest / compose",
 		"  t            try a template (Catalog) k  keep · g  gc (watched try)",
 		"  mouse        click rows/tabs/keybar · wheel scrolls",
 		"  actions are contextual — see the keybar",

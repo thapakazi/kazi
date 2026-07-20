@@ -32,11 +32,11 @@ func TestContextualKeys(t *testing.T) {
 		want []string
 	}{
 		{"running registered stack", selection{kind: selStack, running: true},
-			[]string{"s", "e", "l", "o", "d", "g", "T"}},
+			[]string{"s", "l", "o", "d", "g", "T"}},
 		{"stopped registered stack", selection{kind: selStack, running: false},
-			[]string{"s", "e", "l", "d", "g", "T"}},
+			[]string{"s", "l", "o", "d", "g", "T"}},
 		{"watched ephemeral stack", selection{kind: selStack, running: true, watched: true},
-			[]string{"k", "g", "s", "e", "l", "o", "d", "g", "T"}},
+			[]string{"k", "g", "s", "l", "o", "d", "g", "T"}},
 		{"running discovered stack", selection{kind: selDiscovered, running: true},
 			[]string{"s", "l", "o", "d", "g", "T"}},
 		{"stopped discovered stack", selection{kind: selDiscovered, running: false},

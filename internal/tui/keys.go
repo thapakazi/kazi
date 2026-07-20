@@ -91,12 +91,9 @@ func contextualKeys(sel selection) []keyHint {
 	var hints []keyHint
 	switch sel.kind {
 	case selStack:
-		// Registered stacks: s:menu, e:edit, l:logs, o:open (running), d:remove.
-		if sel.running {
-			hints = []keyHint{{"s", "menu"}, {"e", "edit"}, {"l", "logs"}, {"o", "open"}, {"d", "remove"}}
-		} else {
-			hints = []keyHint{{"s", "menu"}, {"e", "edit"}, {"l", "logs"}, {"d", "remove"}}
-		}
+		// Registered stacks: s:menu, l:logs, o:open (browser/editor menu), d:remove.
+		// o is always offered — its editor branch needs no running container.
+		hints = []keyHint{{"s", "menu"}, {"l", "logs"}, {"o", "open"}, {"d", "remove"}}
 		// A watched ephemeral stack (just launched via try) also offers keep/gc.
 		if sel.watched {
 			hints = append([]keyHint{{"k", "keep"}, {"g", "gc"}}, hints...)

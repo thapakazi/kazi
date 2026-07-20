@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -161,32 +160,10 @@ func gcCmd(eng Engine, name string) tea.Cmd {
 	}
 }
 
-// editTargetsCmd resolves the editable targets for a stack (e:edit).
+// editTargetsCmd resolves a stack's editable targets for the o-e open flow.
 func editTargetsCmd(eng Engine, name string) tea.Cmd {
 	return func() tea.Msg {
 		targets, err := eng.EditTargets(name)
 		return editTargetsMsg{stack: name, targets: targets, err: err}
 	}
-}
-
-// editValidateCmd runs a saved target's validator off the UI goroutine.
-func editValidateCmd(target engine.EditTarget) tea.Cmd {
-	return func() tea.Msg {
-		if target.Validate == nil {
-			return editValidatedMsg{err: nil}
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
-		defer cancel()
-		return editValidatedMsg{err: target.Validate(ctx)}
-	}
-}
-
-// editorExec is the seam that suspends the TUI to $EDITOR on path and reports
-// the editor's exit as an editorReturnedMsg. Tests replace it so the edit flow
-// can be driven without a real terminal.
-var editorExec = func(path string) tea.Cmd {
-	editor := engine.ResolveEditor("")
-	parts := strings.Fields(editor)
-	c := exec.Command(parts[0], append(parts[1:], path)...) //nolint:gosec // user editor is intentional
-	return tea.ExecProcess(c, func(err error) tea.Msg { return editorReturnedMsg{err: err} })
 }

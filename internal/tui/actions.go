@@ -34,20 +34,28 @@ func (m *Model) handleActionKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 		return nil, true
 	case "o":
-		// Open a stack's URL. Offered for running registered/discovered stacks;
-		// the actual choose/open happens once Urls resolves (openResolvedMsg).
+		// Open menu (transient): b → the stack's URL in the browser, e → its
+		// config/project in $EDITOR (detached). Offered for registered stacks
+		// (always — editing needs no running container) and for running
+		// discovered stacks (browser only; they have no manifest to edit).
 		sel := m.currentSelection()
-		if sel.kind != selStack && sel.kind != selDiscovered {
-			return nil, false
-		}
-		if !sel.running {
-			return nil, false
-		}
 		r := m.selectedRow()
 		if r == nil || r.kind != rowStack {
 			return nil, false
 		}
-		return openUrlCmd(m.eng, r.label), true
+		switch sel.kind {
+		case selStack:
+			// editable always; browser offered inside the menu when running.
+		case selDiscovered:
+			if !sel.running {
+				return nil, false // nothing to open: no URL, no manifest
+			}
+		default:
+			return nil, false
+		}
+		m.modal = modalState{active: true, mkind: modalOpenChoose, stack: r.label,
+			prompt: "› " + r.label + " — open"}
+		return nil, true
 	case "s":
 		// Quick-actions menu for the selected stack.
 		sel := m.currentSelection()
@@ -68,17 +76,6 @@ func (m *Model) handleActionKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 		m.modal = modalState{active: true, mkind: modalSourceChoose, prompt: "new stack — source"}
 		return nil, true
-	case "e":
-		// Edit a registered stack's manifest (or compose file). Discovered stacks
-		// have no manifest, so nothing to edit.
-		if m.currentSelection().kind != selStack {
-			return nil, false
-		}
-		r := m.selectedRow()
-		if r == nil || r.kind != rowStack {
-			return nil, false
-		}
-		return editTargetsCmd(m.eng, r.label), true
 	case "d":
 		// Remove/teardown transient. Registered/discovered stacks → down & remove
 		// (+ deregister for registered); unmanaged loose containers → docker rm -f.
@@ -232,8 +229,10 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleListKey(msg, m.pickerChoose)
 	case modalMenu:
 		return m.handleListKey(msg, m.menuChoose)
-	case modalEditPick:
-		return m.handleListKey(msg, m.editChoose)
+	case modalEditOpen:
+		return m.handleListKey(msg, m.editOpenChoose)
+	case modalOpenChoose:
+		return m.handleOpenChoose(msg)
 	case modalLogService:
 		return m.handleListKey(msg, m.logServiceChoose)
 	case modalEnvService:
@@ -249,15 +248,38 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.modal = modalState{}
 		return m, m.dispatchAction(act)
 	case "n", "N", "esc":
-		act := m.modal
 		m.modal = modalState{}
-		// Declining a re-edit discards the invalid buffer: restore the original.
-		if act.action == actEditRetry {
-			m.restoreEdit()
-			path := m.editTarget.Path
-			m.clearEdit()
-			return m, m.setToast("edit discarded — " + path + " restored")
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleOpenChoose resolves the transient open menu: b opens the stack's URL in
+// the browser (running stacks), e opens its config/project in $EDITOR detached
+// (registered stacks). esc/q cancel; unbound keys are swallowed so the menu
+// stays put.
+func (m Model) handleOpenChoose(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	stack := m.modal.stack
+	var selK selKind
+	running := false
+	if r := m.rowFor(stack); r != nil {
+		selK, running = r.selKind, r.running > 0
+	}
+	switch msg.String() {
+	case "b":
+		if !running {
+			return m, nil // no live container ⇒ no URL to open
 		}
+		m.modal = modalState{}
+		return m, openUrlCmd(m.eng, stack)
+	case "e":
+		if selK != selStack {
+			return m, nil // only registered stacks have a config/project to edit
+		}
+		m.modal = modalState{}
+		return m, editTargetsCmd(m.eng, stack)
+	case "esc", "q":
+		m.modal = modalState{}
 		return m, nil
 	}
 	return m, nil
@@ -361,11 +383,6 @@ func (m Model) dispatchAction(a modalState) tea.Cmd {
 		return keepCmd(m.eng, a.stack)
 	case actGc:
 		return gcCmd(m.eng, a.stack)
-	case actRestart:
-		return actionStartCmd(m.eng, "restart", a.stack)
-	case actEditRetry:
-		// Re-open the same buffer in $EDITOR; edit state is still set.
-		return editorExec(m.editTarget.Path)
 	}
 	return nil
 }

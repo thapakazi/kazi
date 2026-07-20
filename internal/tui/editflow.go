@@ -1,50 +1,46 @@
 package tui
 
 import (
-	"os"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/thapakazi/kazi/internal/engine"
 )
 
-// beginEdit snapshots the target file's original bytes (for abort-restore) and
-// suspends the TUI to $EDITOR on it. Validation runs when the editor returns.
-func (m Model) beginEdit(stack string, target engine.EditTarget) (tea.Model, tea.Cmd) {
-	orig, err := os.ReadFile(target.Path)
-	if err != nil {
-		return m, m.setToast("edit: " + err.Error())
-	}
-	m.editStack = stack
-	m.editTarget = target
-	m.editOrig = orig
-	return m, editorExec(target.Path)
+// editOpenTarget is one thing o-e can open in the external editor: a short
+// label ("config"|"project") and the path handed to $EDITOR.
+type editOpenTarget struct {
+	label string
+	path  string
 }
 
-// editChoose begins editing the target picked from the manifest/compose picker.
-func (m Model) editChoose(i int) (tea.Model, tea.Cmd) {
-	if i < 0 || i >= len(m.editTargets) {
+// editOpenTargets maps the engine's edit targets onto o-e's config/project
+// choices: the manifest opens as "config" (the file itself); a compose file
+// opens its containing directory as "project", so the editor loads the whole
+// project rather than a single YAML. Kinds kazi doesn't own are skipped.
+func editOpenTargets(targets []engine.EditTarget) []editOpenTarget {
+	var out []editOpenTarget
+	for _, t := range targets {
+		switch t.Kind {
+		case "manifest":
+			out = append(out, editOpenTarget{label: "config", path: t.Path})
+		case "compose":
+			out = append(out, editOpenTarget{label: "project", path: filepath.Dir(t.Path)})
+		}
+	}
+	return out
+}
+
+// editOpenChoose launches the external editor (detached) on the o-e target at i
+// and closes the picker. The paths live in the modal's parallel values slice.
+func (m Model) editOpenChoose(i int) (tea.Model, tea.Cmd) {
+	if i < 0 || i >= len(m.modal.values) {
 		return m, nil
 	}
-	target := m.editTargets[i]
-	stack := m.editStack
+	path := m.modal.values[i]
 	m.modal = modalState{}
-	return m.beginEdit(stack, target)
-}
-
-// restoreEdit writes the edited file's original bytes back (abort path).
-func (m *Model) restoreEdit() {
-	if m.editTarget.Path != "" && m.editOrig != nil {
-		_ = os.WriteFile(m.editTarget.Path, m.editOrig, 0o644)
-	}
-}
-
-// clearEdit resets all edit-flow state.
-func (m *Model) clearEdit() {
-	m.editStack = ""
-	m.editTargets = nil
-	m.editTarget = engine.EditTarget{}
-	m.editOrig = nil
+	return m, editorOpen(path)
 }
 
 // rowFor returns the sidebar row for a named stack, or nil.
