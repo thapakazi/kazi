@@ -44,7 +44,7 @@ func TestContextualKeys(t *testing.T) {
 		{"unmanaged", selection{kind: selUnmanaged},
 			[]string{"a", "d", "g", "T"}},
 		{"system", selection{kind: selSystem},
-			[]string{"l", "T", "g", "T"}},
+			[]string{"s", "l", "T", "g", "T"}},
 		{"template", selection{kind: selTemplate},
 			[]string{"t", "e", "g", "T"}},
 		{"all/none", selection{kind: selNone},

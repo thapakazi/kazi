@@ -109,8 +109,10 @@ func contextualKeys(sel selection) []keyHint {
 		// Loose containers: a:adopt (bring under kazi) or d:remove (docker rm -f).
 		hints = []keyHint{{"a", "adopt"}, {"d", "remove"}}
 	case selSystem:
-		// System stack (kazi-proxy) is protected: logs + trust, never rm.
-		hints = []keyHint{{"l", "logs"}, {"T", "trust"}}
+		// System stack (kazi-proxy): startable/stoppable/restartable via the menu
+		// (so a down proxy can be brought back up), but never removable. Plus
+		// logs + trust.
+		hints = []keyHint{{"s", "menu"}, {"l", "logs"}, {"T", "trust"}}
 	case selTemplate:
 		hints = []keyHint{{"t", "try"}, {"e", "eject"}}
 	case selNone:
