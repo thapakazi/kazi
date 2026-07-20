@@ -66,3 +66,32 @@ changelog:
 release:
   draft: false
   prerelease: auto
+
+# Homebrew tap — publishes a cask to github.com/thapakazi/homebrew-kazi
+# so users can `brew install thapakazi/kazi/kazi` (or tap first, then install).
+# GoReleaser generates on_macos/on_linux blocks, so the cask covers both.
+homebrew_casks:
+  - name: kazi
+    repository:
+      owner: thapakazi
+      name: homebrew-kazi
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://thapakazi.github.io/kazi"
+    description: "The control plane for your local containers"
+    # kazi shells out to a container runtime's compose CLI; Docker is first-class.
+    caveats: |
+      kazi needs a container runtime with compose support on your PATH
+      (Docker is first-class; podman and nerdctl are auto-detected).
+    commit_author:
+      name: goreleaser-bot
+      email: bot@goreleaser.com
+    # Strip the macOS quarantine bit so the binary runs without a Gatekeeper prompt.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/kazi"]
+          end
+    # Skip publishing for prereleases / snapshots.
+    skip_upload: auto
