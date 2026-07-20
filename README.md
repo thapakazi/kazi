@@ -17,6 +17,34 @@ kazi is a compose-preferred, runtime-agnostic local stack manager: it lets you s
 
 ---
 
+## Install
+
+### Homebrew (macOS & Linux)
+
+```sh
+brew install thapakazi/tools/kazi
+```
+
+Or tap first, then install:
+
+```sh
+brew tap thapakazi/tools
+brew install kazi
+```
+
+Upgrade later with `brew upgrade kazi`.
+
+### From source
+
+```sh
+go install github.com/thapakazi/kazi/cmd/kazi@latest
+```
+
+Prebuilt binaries for every release are also on the
+[Releases page](https://github.com/thapakazi/kazi/releases).
+
+---
+
 ## Quick start
 
 ```sh
