@@ -409,4 +409,59 @@ func TestOpenNoURL(t *testing.T) {
 	}
 }
 
+// menuTokens extracts the dispatch tokens from a stack-menu item list.
+func menuTokens(items []menuItem) []string {
+	out := make([]string, len(items))
+	for i, it := range items {
+		out[i] = it.token
+	}
+	return out
+}
+
+// TestStackMenuSystemStack: the system stack's menu offers start/stop/restart
+// and the read-only views, but never open/route (proxy-specific) or delete.
+func TestStackMenuSystemStack(t *testing.T) {
+	// Running system stack: restart + down, then logs/urls/config.
+	got := menuTokens(stackMenuItems(true, false, true))
+	if !eq(got, []string{"restart", "down", "logs", "urls", "config"}) {
+		t.Fatalf("running system menu = %v", got)
+	}
+	// Stopped system stack offers up so a down proxy can be brought back.
+	stopped := menuTokens(stackMenuItems(false, false, true))
+	if !eq(stopped, []string{"up", "restart", "logs", "urls", "config"}) {
+		t.Fatalf("stopped system menu = %v", stopped)
+	}
+	// A normal running registered stack still gets open/route/delete.
+	norm := menuTokens(stackMenuItems(true, true, false))
+	if !eq(norm, []string{"restart", "down", "open", "route", "logs", "urls", "config", "delete"}) {
+		t.Fatalf("normal stack menu = %v", norm)
+	}
+}
+
+// TestSystemStackMenuOpens: s on the kazi-proxy system stack opens the actions
+// menu (so a down proxy can be started/restarted); the menu never offers delete.
+func TestSystemStackMenuOpens(t *testing.T) {
+	m := loaded(t)
+	m = press(m, keyRunes("G")) // jump to the system stack (kazi-proxy, last row)
+	if m.selectedRow().selKind != selSystem {
+		t.Fatalf("expected system selection, got %v", m.selectedRow().selKind)
+	}
+	m = press(m, keyRunes("s"))
+	if !m.modal.active || m.modal.mkind != modalMenu {
+		t.Fatalf("s should open the system stack menu, got %+v", m.modal)
+	}
+	restart := false
+	for _, v := range m.modal.values {
+		if v == "delete" {
+			t.Fatal("system stack menu must never offer delete")
+		}
+		if v == "restart" {
+			restart = true
+		}
+	}
+	if !restart {
+		t.Fatalf("system menu should offer restart, got %v", m.modal.values)
+	}
+}
+
 var _ tea.Msg = actionDoneMsg{}

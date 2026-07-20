@@ -57,9 +57,11 @@ func (m *Model) handleActionKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 			prompt: "› " + r.label + " — open"}
 		return nil, true
 	case "s":
-		// Quick-actions menu for the selected stack.
+		// Quick-actions menu for the selected stack. The system stack (kazi-proxy)
+		// is included so it can be started/restarted; its menu omits open/route
+		// and never offers delete.
 		sel := m.currentSelection()
-		if sel.kind != selStack && sel.kind != selDiscovered {
+		if sel.kind != selStack && sel.kind != selDiscovered && sel.kind != selSystem {
 			return nil, false
 		}
 		r := m.selectedRow()
@@ -140,16 +142,22 @@ type menuItem struct {
 }
 
 // stackMenuItems lists the operations offered for a selected stack, tailored to
-// its running state and whether it's registered (deletable).
-func stackMenuItems(running, registered bool) []menuItem {
+// its running state, whether it's registered (deletable), and whether it's the
+// protected system stack (kazi-proxy). The system stack can be
+// started/stopped/restarted but never routed, browser-opened, or deleted.
+func stackMenuItems(running, registered, system bool) []menuItem {
 	var items []menuItem
 	if running {
 		items = append(items,
 			menuItem{"restart", "restart the stack"},
 			menuItem{"down", "stop the stack's containers"},
-			menuItem{"open", "open URL in the browser"},
-			menuItem{"route", "route published ports as *.localhost URLs"},
 		)
+		if !system {
+			items = append(items,
+				menuItem{"open", "open URL in the browser"},
+				menuItem{"route", "route published ports as *.localhost URLs"},
+			)
+		}
 	} else {
 		items = append(items,
 			menuItem{"up", "start the stack (up, detached)"},
@@ -169,7 +177,7 @@ func stackMenuItems(running, registered bool) []menuItem {
 
 // openStackMenu populates a menu modal for the given stack row.
 func (m *Model) openStackMenu(r *sidebarRow) {
-	items := stackMenuItems(r.running > 0, r.selKind == selStack)
+	items := stackMenuItems(r.running > 0, r.selKind == selStack, r.selKind == selSystem)
 	opts := make([]string, len(items))
 	vals := make([]string, len(items))
 	for i, it := range items {
