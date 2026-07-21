@@ -75,6 +75,40 @@ type logLineMsg struct {
 // logDoneMsg marks a stream's end (EOF or cancel).
 type logDoneMsg struct{ stack string }
 
+// statsStreamMsg reports that a `<runtime> stats` stream has started for a
+// stack; it hands the model the sample channel and its cancel func.
+type statsStreamMsg struct {
+	stack, service string
+	ch             <-chan engine.StatSample
+	cancel         context.CancelFunc
+}
+
+// statSampleMsg carries one streamed resource sample, tagged with its stack so a
+// stale stream (the user navigated away) can be discarded.
+type statSampleMsg struct {
+	stack  string
+	sample engine.StatSample
+}
+
+// statsDoneMsg marks a stats stream's end (EOF or cancel).
+type statsDoneMsg struct{ stack string }
+
+// statsErrMsg flags a failed stats stream start (e.g. a runtime without JSON
+// stats); the Stats tab shows an unavailable notice rather than crashing.
+type statsErrMsg struct {
+	stack string
+	err   error
+}
+
+// hostStatsMsg carries the host CPU/Mem/Disk sample plus the aggregate
+// container-usage totals for the ALL overview.
+type hostStatsMsg struct {
+	hs        engine.HostStats
+	aggCPU    float64
+	aggMem    uint64
+	aggStacks int
+}
+
 // actionStreamMsg reports that a captured lifecycle verb (up/down/restart) has
 // started; it hands the model the scanner + error channel to pump.
 type actionStreamMsg struct {

@@ -245,6 +245,8 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleListKey(msg, m.logServiceChoose)
 	case modalEnvService:
 		return m.handleListKey(msg, m.envServiceChoose)
+	case modalStatsService:
+		return m.handleListKey(msg, m.statsServiceChoose)
 	case modalSourceChoose:
 		return m.handleSourceChoose(msg)
 	case modalRemoveChoose:

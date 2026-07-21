@@ -55,6 +55,11 @@ type Engine struct {
 	Cfg store.Config
 	Out io.Writer // compose stdout passthrough
 	Err io.Writer // compose stderr passthrough
+
+	// host reads host CPU/mem/disk for HostStats; nil ⇒ the gopsutil-backed
+	// default. Tests inject a fake provider so the mapping stays unit-testable
+	// without touching the real OS.
+	host hostProvider
 }
 
 func New(rt runtime.Runtime, cfg store.Config, out, errW io.Writer) *Engine {

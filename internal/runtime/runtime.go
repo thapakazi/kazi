@@ -36,6 +36,11 @@ type Runtime interface {
 	// Cmd builds `<bin> <args...>` without running it. Used for network
 	// inspect/create and exec operations — subprocess only, never the API socket.
 	Cmd(ctx context.Context, args ...string) *exec.Cmd
+	// StatsCmd builds `<bin> stats --format json [--no-stream] <ids...>` without
+	// running it. stream=false is the one-shot snapshot (CLI); stream=true follows
+	// (TUI). Container-level, still runtime-agnostic, still subprocess-only — no
+	// compose stats verb exists, and the API socket is never touched.
+	StatsCmd(ctx context.Context, ids []string, stream bool) *exec.Cmd
 }
 
 // Detect picks a runtime. pref "" or "auto" probes docker, podman, nerdctl
@@ -117,5 +122,16 @@ func (c *CLI) ComposeCmd(ctx context.Context, project, dir string, files []strin
 }
 
 func (c *CLI) Cmd(ctx context.Context, args ...string) *exec.Cmd {
+	return exec.CommandContext(ctx, c.Bin, args...)
+}
+
+func (c *CLI) StatsCmd(ctx context.Context, ids []string, stream bool) *exec.Cmd {
+	// --format json emits one JSON object per container per interval, without the
+	// ANSI cursor moves the table format uses — so a scanner can read it linewise.
+	args := []string{"stats", "--format", "json"}
+	if !stream {
+		args = append(args, "--no-stream")
+	}
+	args = append(args, ids...)
 	return exec.CommandContext(ctx, c.Bin, args...)
 }

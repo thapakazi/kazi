@@ -83,6 +83,10 @@ func (m Model) View() string {
 	if m.onLogsTab() && m.logFullscreen && !m.help {
 		frame = overlay(frame, m.renderLogsFullscreen(), m.width, m.height)
 	}
+	// The Stats tab shares the same fullscreen contract for bigger graphs.
+	if m.onStatsTab() && m.statsFullscreen && !m.help {
+		frame = overlay(frame, m.renderStatsFullscreen(), m.width, m.height)
+	}
 
 	// A modal or input form floats over the dashboard rather than replacing it,
 	// so context (which stack, its state) stays visible behind the popup.

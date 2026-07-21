@@ -98,6 +98,7 @@ type ConfigSpec struct {
 // TUIConfig controls the TUI dashboard. All fields optional.
 type TUIConfig struct {
 	RefreshInterval string `yaml:"refreshInterval,omitempty"` // duration string, default "2s"
+	StatsHistory    int    `yaml:"statsHistory,omitempty"`    // Stats-tab sparkline ring size, default 60
 }
 
 // ProxyConfig lists which well-known ports the proxy should forward.

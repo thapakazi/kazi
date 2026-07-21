@@ -114,6 +114,41 @@ func (fakeEngine) LogStream(ctx context.Context, name, service string, opts engi
 	return io.NopCloser(strings.NewReader(body)), func() {}, nil
 }
 
+// Stats returns canned resource stats for blog's two running services (and, with
+// an empty name, the same as the whole-host aggregate source).
+func (fakeEngine) Stats(ctx context.Context, name string) ([]engine.ContainerStats, error) {
+	if name == "" || name == "blog" {
+		return []engine.ContainerStats{
+			{Stack: "blog", Service: "web", Name: "blog-web-1", CPUPercent: 2.4, MemUsage: "128MiB", MemLimit: "512MiB", MemPercent: 25, NetRx: "1.2MB", NetTx: "340kB", BlockRead: "45MB", BlockWrite: "12MB", PIDs: 14},
+			{Stack: "blog", Service: "db", Name: "blog-db-1", CPUPercent: 0.6, MemUsage: "201MiB", MemLimit: "512MiB", MemPercent: 39, NetRx: "88kB", NetTx: "12kB", BlockRead: "6.7GB", BlockWrite: "0B", PIDs: 20},
+		}, nil
+	}
+	return nil, nil
+}
+
+// StatsStream emits a few rising-CPU samples for blog's services then closes, so
+// the Stats tab renders sparklines with visible variation. ids are ignored.
+func (fakeEngine) StatsStream(ctx context.Context, ids []string) (<-chan engine.StatSample, error) {
+	ch := make(chan engine.StatSample, 16)
+	for i, cpu := range []float64{1.0, 2.4, 3.1} {
+		ch <- engine.StatSample{Seq: i, ContainerStats: engine.ContainerStats{
+			Stack: "blog", Service: "web", Name: "blog-web-1", CPUPercent: cpu,
+			MemUsage: "128MiB", MemLimit: "512MiB", MemPercent: 25,
+			NetRx: "1.2MB", NetTx: "340kB", BlockRead: "45MB", BlockWrite: "12MB", PIDs: 14}}
+		ch <- engine.StatSample{Seq: i, ContainerStats: engine.ContainerStats{
+			Stack: "blog", Service: "db", Name: "blog-db-1", CPUPercent: 0.6,
+			MemUsage: "201MiB", MemLimit: "512MiB", MemPercent: 39,
+			NetRx: "88kB", NetTx: "12kB", BlockRead: "6.7GB", BlockWrite: "0B", PIDs: 20}}
+	}
+	close(ch)
+	return ch, nil
+}
+
+func (fakeEngine) HostStats(context.Context) (engine.HostStats, error) {
+	return engine.HostStats{CPUPercent: 312, CPUCores: 14,
+		MemUsed: 12 << 30, MemTotal: 36 << 30, DiskUsed: 884 << 30, DiskTotal: 994 << 30}, nil
+}
+
 func (fakeEngine) Remove(string) error                           { return nil }
 func (fakeEngine) RemoveContainer(context.Context, string) error { return nil }
 func (fakeEngine) Adopt(context.Context, string, []string) error { return nil }

@@ -22,6 +22,12 @@ type Fake struct {
 	// ComposeCmds records the *exec.Cmd returned by each ComposeCmd call so
 	// tests can inspect the env the engine appends (cmd.Env) before running it.
 	ComposeCmds []*exec.Cmd
+
+	// StatsCalls records each StatsCmd invocation: {stream, ids...} ("stream" or
+	// "nostream" first). StatsOut is emitted verbatim as the command's stdout
+	// (one docker-stats JSON object per line).
+	StatsCalls [][]string
+	StatsOut   string
 }
 
 // Envs returns the cmd.Env of every recorded ComposeCmd. Useful for asserting
@@ -63,6 +69,15 @@ func (f *Fake) composeCmd(args ...string) *exec.Cmd {
 		return exec.Command("echo", strings.Join(f.Services, "\n"))
 	}
 	return exec.Command("true")
+}
+
+func (f *Fake) StatsCmd(ctx context.Context, ids []string, stream bool) *exec.Cmd {
+	mode := "nostream"
+	if stream {
+		mode = "stream"
+	}
+	f.StatsCalls = append(f.StatsCalls, append([]string{mode}, ids...))
+	return exec.Command("printf", "%s", f.StatsOut)
 }
 
 func (f *Fake) Cmd(ctx context.Context, args ...string) *exec.Cmd {

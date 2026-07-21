@@ -34,6 +34,18 @@ type Engine interface {
 	// opts carries tail/since for the m5-log features.
 	LogStream(ctx context.Context, name, service string, opts engine.LogStreamOpts) (io.ReadCloser, context.CancelFunc, error)
 
+	// Stats is a one-shot resource snapshot for a stack (or every kazi-visible
+	// stack when name is empty). The ALL overview sums it into an aggregate line.
+	Stats(ctx context.Context, name string) ([]engine.ContainerStats, error)
+
+	// StatsStream follows `<runtime> stats` over the given container IDs, emitting
+	// one sample per container per interval until ctx is cancelled. The Stats tab
+	// ring-buffers the samples into sparklines; cancelling ctx tears it down.
+	StatsStream(ctx context.Context, ids []string) (<-chan engine.StatSample, error)
+
+	// HostStats reads host CPU/Mem/Disk for the ALL overview's host graphs.
+	HostStats(ctx context.Context) (engine.HostStats, error)
+
 	// Remove deregisters a registered stack (deletes its manifest; never touches
 	// containers). Backs the guarded d:remove → r (deregister) action.
 	Remove(name string) error
