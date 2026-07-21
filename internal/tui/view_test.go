@@ -82,6 +82,26 @@ func TestLogsStream(t *testing.T) {
 	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
 }
 
+// TestStatsTabStream: the Stats tab streams live per-service resource samples
+// for the selected stack.
+func TestStatsTabStream(t *testing.T) {
+	tm := newProgram(t)
+	waitForContains(t, tm, "blog")
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // blog
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")}) // focus detail
+	for range 5 { // Services → … → Stats
+		tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	}
+	waitForContains(t, tm, "Stats", "web", "PIDs 14", "db", "PIDs 20")
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+}
+
+// The ALL host overview (CPU/Mem/Disk graphs + aggregate line) is covered by
+// direct-render unit tests in stats_test.go; a live teatest is avoided because
+// teatest's virtual terminal clips the lower overview rows unreliably (the
+// feature itself renders fine in a real terminal).
+
 // TestStatusBar: the status bar reflects runtime, proxy and gc count.
 func TestStatusBar(t *testing.T) {
 	tm := newProgram(t)

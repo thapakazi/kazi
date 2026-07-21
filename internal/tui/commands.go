@@ -40,6 +40,59 @@ func readLogCmd(scanner *bufio.Scanner, stack string) tea.Cmd {
 	}
 }
 
+// startStatsStreamCmd opens a `<runtime> stats` follow stream scoped to ids (no
+// timeout — it runs until the user leaves the tab). It owns a cancellable context
+// whose cancel func rides back on the statsStreamMsg so the model can tear the
+// stream down on leave, exactly like the Logs stream.
+func startStatsStreamCmd(eng Engine, stack, service string, ids []string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithCancel(context.Background())
+		ch, err := eng.StatsStream(ctx, ids)
+		if err != nil {
+			cancel()
+			return statsErrMsg{stack: stack, err: err}
+		}
+		return statsStreamMsg{stack: stack, service: service, ch: ch, cancel: cancel}
+	}
+}
+
+// readStatSampleCmd reads the next sample from a stats channel; it returns a
+// statSampleMsg or, at close, a statsDoneMsg. Each sample self-schedules the next
+// read in Update — the same pump pattern as readLogCmd.
+func readStatSampleCmd(ch <-chan engine.StatSample, stack string) tea.Cmd {
+	return func() tea.Msg {
+		s, ok := <-ch
+		if !ok {
+			return statsDoneMsg{stack: stack}
+		}
+		return statSampleMsg{stack: stack, sample: s}
+	}
+}
+
+// hostStatsCmd reads the host CPU/Mem/Disk sample and, in the same pass, an
+// aggregate of every kazi-visible container's CPU/mem — the ALL overview's two
+// data sources. It runs off the UI goroutine; a wholly failed host read degrades
+// to zeros (metrics hide) rather than erroring.
+func hostStatsCmd(eng Engine) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+		defer cancel()
+		hs, _ := eng.HostStats(ctx)
+		cs, _ := eng.Stats(ctx, "")
+		var aggCPU float64
+		var aggMem uint64
+		stacks := map[string]bool{}
+		for _, c := range cs {
+			aggCPU += c.CPUPercent
+			aggMem += parseHumanBytes(c.MemUsage)
+			if c.Stack != "" {
+				stacks[c.Stack] = true
+			}
+		}
+		return hostStatsMsg{hs: hs, aggCPU: aggCPU, aggMem: aggMem, aggStacks: len(stacks)}
+	}
+}
+
 // tickCmd schedules the next refresh tick.
 func tickCmd(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })

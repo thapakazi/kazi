@@ -37,9 +37,10 @@ const (
 	tabEnv
 	tabURLs
 	tabConfig
+	tabStats
 )
 
-var tabNames = []string{"Services", "Logs", "Env", "URLs", "Config"}
+var tabNames = []string{"Services", "Logs", "Env", "URLs", "Config", "Stats"}
 
 // actionKind identifies a guarded engine action a confirm modal dispatches.
 type actionKind int
@@ -64,6 +65,7 @@ const (
 	modalRemoveChoose           // transient remove/teardown picker (d → d/r)
 	modalLogService             // transient Logs container filter picker (c)
 	modalEnvService             // transient Env container filter picker (c)
+	modalStatsService           // transient Stats container filter picker (c)
 )
 
 // modalState is the active modal. active==false means none is open; while one
@@ -169,6 +171,33 @@ type Model struct {
 	envSearching bool
 	envMatchCur  int
 
+	// Stats tab: live `<runtime> stats` stream for the selected stack. Mirrors the
+	// Logs lifecycle — one stream at a time, torn down on leave via statsCancel.
+	// statsSeries ring-buffers per-container CPU%/Mem% for the sparklines; the
+	// engine stays stateless (it just emits samples). statsErr holds a
+	// runtime-unavailable message so the tab degrades without killing the UI.
+	statsStack      string
+	statsService    string
+	statsStreaming  bool
+	statsCancel     context.CancelFunc
+	statsCh         <-chan engine.StatSample
+	statsSeries     map[string]*statSeries
+	statsErr        string
+	statsHistory    int // sparkline ring size (spec.tui.statsHistory, default 60)
+	statsFullscreen bool
+
+	// Host overview (ALL): host CPU/Mem/Disk graphs + an aggregate container-usage
+	// line, polled on the normal tick while ALL is selected (hostInFlight guards
+	// against overlapping polls, since the aggregate blocks ~1s on a stats delta).
+	hostStats    engine.HostStats
+	hostHave     bool
+	hostInFlight bool
+	hostCPUHist  []float64
+	hostMemHist  []float64
+	aggCPU       float64
+	aggMem       uint64
+	aggStacks    int
+
 	// Action panel: captured output of the last lifecycle verb (up/down/restart),
 	// shown in a collapsible bottom bar so compose progress never scribbles over
 	// the dashboard.
@@ -214,23 +243,46 @@ type Model struct {
 	err           error
 }
 
+// defaultStatsHistory is the Stats-tab sparkline ring size when none is
+// configured — ~2min of history at the runtime's ~1s stats cadence.
+const defaultStatsHistory = 60
+
+// Option tweaks a freshly built Model. It keeps New's signature stable (existing
+// callers and tests pass none) while letting the CLI thread config through.
+type Option func(*Model)
+
+// WithStatsHistory sets the Stats-tab sparkline ring size; non-positive values
+// keep the default.
+func WithStatsHistory(n int) Option {
+	return func(m *Model) {
+		if n > 0 {
+			m.statsHistory = n
+		}
+	}
+}
+
 // New builds a dashboard model over the given engine with the given refresh
 // interval. The model starts on the synthetic ALL overview.
-func New(eng Engine, refresh time.Duration) Model {
+func New(eng Engine, refresh time.Duration, opts ...Option) Model {
 	if refresh <= 0 {
 		refresh = 2 * time.Second
 	}
-	return Model{
-		eng:       eng,
-		keys:      defaultKeyMap(),
-		st:        defaultStyles(),
-		refresh:   refresh,
-		width:     80,
-		height:    24,
-		logFollow: true,
-		logTail:   "500",
-		logSince:  "all",
+	m := Model{
+		eng:          eng,
+		keys:         defaultKeyMap(),
+		st:           defaultStyles(),
+		refresh:      refresh,
+		width:        80,
+		height:       24,
+		logFollow:    true,
+		logTail:      "500",
+		logSince:     "all",
+		statsHistory: defaultStatsHistory,
 	}
+	for _, o := range opts {
+		o(&m)
+	}
+	return m
 }
 
 // Init kicks off the first load and starts the refresh ticker.

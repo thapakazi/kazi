@@ -53,6 +53,9 @@ func (m Model) tabSegs() (string, []segment) {
 // stack with its health glyph and running/total tally.
 func (m Model) renderOverview() string {
 	var b strings.Builder
+	if host := m.renderHostOverview(); host != "" {
+		b.WriteString(host + "\n")
+	}
 	b.WriteString(m.st.tabActive.Render("Overview") + "\n\n")
 	for _, r := range m.rows {
 		if r.kind != rowStack {
@@ -91,6 +94,8 @@ func (m Model) renderTabs(s engine.StackInfo, width int) string {
 		body = m.renderURLs(s)
 	case tabConfig:
 		body = m.renderConfig(s)
+	case tabStats:
+		body = m.renderStats(s, width)
 	}
 	return head + "\n\n" + body
 }

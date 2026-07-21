@@ -77,12 +77,12 @@ func (m Model) renderModal() string {
 		b.WriteString("\n" + m.st.keybarKey.Render("esc") + " cancel")
 		return m.st.modalBox.Render(b.String())
 	}
-	if m.modal.mkind == modalPicker || m.modal.mkind == modalMenu || m.modal.mkind == modalEditOpen || m.modal.mkind == modalLogService || m.modal.mkind == modalEnvService {
+	if m.modal.mkind == modalPicker || m.modal.mkind == modalMenu || m.modal.mkind == modalEditOpen || m.modal.mkind == modalLogService || m.modal.mkind == modalEnvService || m.modal.mkind == modalStatsService {
 		verb := "open"
 		switch m.modal.mkind {
 		case modalMenu:
 			verb = "run"
-		case modalLogService, modalEnvService:
+		case modalLogService, modalEnvService, modalStatsService:
 			verb = "filter"
 		}
 		var b strings.Builder
@@ -184,13 +184,15 @@ func (m Model) keybarSegs() (string, []segment) {
 		hints = logKeyHints()
 	case m.onEnvTab():
 		hints = envKeyHints()
+	case m.onStatsTab():
+		hints = statsKeyHints()
 	}
 	for _, h := range hints {
 		sep()
 		b.push("act:"+h.Key, m.st.keybarKey.Render(h.Key)+":"+h.Label)
 	}
 	// n:new — register a stack; a Stacks-mode front door over `kazi add`.
-	if m.mode == modeStacks && !m.onLogsTab() && !m.onEnvTab() {
+	if m.mode == modeStacks && !m.onLogsTab() && !m.onEnvTab() && !m.onStatsTab() {
 		sep()
 		b.push("act:n", m.st.keybarKey.Render("n")+":new")
 	}
@@ -235,7 +237,8 @@ func (m Model) renderHelp() string {
 		"  Enter        descend into detail",
 		"",
 		"  c            filter by container (Logs & Env tabs · all ⇄ one service)",
-		"  z            toggle fullscreen logs (Logs tab · Esc exits)",
+		"  z            toggle fullscreen logs/stats (Logs & Stats tabs · Esc exits)",
+		"  Stats tab    live CPU/mem sparklines + net/block/PIDs (c filter · z full)",
 		"  Env tab      per-container env (c filter · / search · n next · j/k scroll · y copy)",
 		"  s            stack actions menu (up/down/restart/logs/open/delete)",
 		"  o            open menu — b: URL in browser · e: config/project in $EDITOR",

@@ -21,12 +21,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tickCmd(m.refresh)
 		}
 		// Poll: refresh the sidebar + status bar, and the selected stack's detail.
-		return m, tea.Batch(
+		cmds := []tea.Cmd{
 			snapshotCmd(m.eng),
 			statusbarCmd(m.eng),
 			m.detailReadCmd(),
 			tickCmd(m.refresh),
-		)
+		}
+		// On the ALL overview, poll host stats too (cheap; the aggregate blocks ~1s
+		// on a stats delta, so hostInFlight guards against overlapping polls).
+		if m.onAllOverview() && !m.hostInFlight {
+			m.hostInFlight = true
+			cmds = append(cmds, hostStatsCmd(m.eng))
+		}
+		return m, tea.Batch(cmds...)
 
 	case snapshotMsg:
 		m.stale = false
@@ -113,6 +120,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.stack == m.logStack {
 			m.logStreaming = false
 		}
+		return m, nil
+
+	case statsStreamMsg:
+		// If we navigated away before the stream opened, discard it.
+		if msg.stack != m.statsStack || msg.service != m.statsService {
+			msg.cancel()
+			return m, nil
+		}
+		m.statsCancel = msg.cancel
+		m.statsCh = msg.ch
+		return m, readStatSampleCmd(msg.ch, msg.stack)
+
+	case statSampleMsg:
+		if msg.stack != m.statsStack {
+			return m, nil // stale stream
+		}
+		m.recordStatSample(msg.sample)
+		return m, readStatSampleCmd(m.statsCh, msg.stack)
+
+	case statsDoneMsg:
+		if msg.stack == m.statsStack {
+			m.statsStreaming = false
+		}
+		return m, nil
+
+	case statsErrMsg:
+		if msg.stack == m.statsStack {
+			m.statsStreaming = false
+			m.statsErr = "stats unavailable on " + m.runtimeName + ": " + msg.err.Error()
+		}
+		return m, nil
+
+	case hostStatsMsg:
+		m.hostInFlight = false
+		m.hostHave = true
+		m.hostStats = msg.hs
+		m.hostCPUHist = appendRing(m.hostCPUHist, msg.hs.CPUPercent, m.statsHistory)
+		memPct := 0.0
+		if msg.hs.MemTotal > 0 {
+			memPct = float64(msg.hs.MemUsed) / float64(msg.hs.MemTotal) * 100
+		}
+		m.hostMemHist = appendRing(m.hostMemHist, memPct, m.statsHistory)
+		m.aggCPU, m.aggMem, m.aggStacks = msg.aggCPU, msg.aggMem, msg.aggStacks
 		return m, nil
 
 	case actionStreamMsg:
@@ -315,6 +365,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		m.stopLogStream()
+		m.stopStatsStream()
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Help):
 		m.help = !m.help
@@ -330,6 +381,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// On the Env tab, Esc clears the container filter, then defocuses.
 		if m.onEnvTab() && m.envEscape() {
+			return m, nil
+		}
+		// On the Stats tab, Esc unwinds fullscreen, then defocuses.
+		if m.onStatsTab() && m.statsEscape() {
 			return m, nil
 		}
 		if m.filter != "" {
@@ -354,6 +409,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.onEnvTab() {
 		if em, cmd, ok := m.handleEnvKey(msg); ok {
 			return em, cmd
+		}
+	}
+	// The Stats tab owns its container-filter / fullscreen keys.
+	if m.onStatsTab() {
+		if sm, cmd, ok := m.handleStatsKey(msg); ok {
+			return sm, cmd
 		}
 	}
 
@@ -639,10 +700,25 @@ func (m Model) detailReadCmd() tea.Cmd {
 }
 
 // navCmd is issued after any change to the selection, tab, or mode: it batches
-// the one-shot detail read with a log-stream (re)sync so the Logs tab follows
-// whatever is now selected.
+// the one-shot detail read with the log- and stats-stream (re)syncs so both
+// follow whatever is now selected, plus a host-stats poll when landing on ALL.
 func (m *Model) navCmd() tea.Cmd {
-	return tea.Batch(m.detailReadCmd(), m.logSyncCmd())
+	cmds := []tea.Cmd{m.detailReadCmd(), m.logSyncCmd(), m.statsSyncCmd()}
+	if m.onAllOverview() && !m.hostInFlight {
+		m.hostInFlight = true
+		cmds = append(cmds, hostStatsCmd(m.eng))
+	}
+	return tea.Batch(cmds...)
+}
+
+// onAllOverview reports whether the synthetic ALL overview is the current
+// selection (Stacks mode) — where the host graphs render.
+func (m Model) onAllOverview() bool {
+	if m.mode != modeStacks {
+		return false
+	}
+	r := m.selectedRow()
+	return r != nil && r.kind == rowAll
 }
 
 // desiredLogTarget reports the (stack, service) the Logs tab should be streaming
