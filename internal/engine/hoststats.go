@@ -22,11 +22,11 @@ type HostStats struct {
 // let HostStats degrade one metric (e.g. hide Disk on an exotic FS) without
 // failing the whole overview.
 type hostReading struct {
-	perCPU  []float64 // per-core busy percentages
-	cores   int
-	memUsed uint64
-	memTotal uint64
-	diskUsed uint64
+	perCPU    []float64 // per-core busy percentages
+	cores     int
+	memUsed   uint64
+	memTotal  uint64
+	diskUsed  uint64
 	diskTotal uint64
 
 	cpuErr  error

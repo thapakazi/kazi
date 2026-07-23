@@ -50,7 +50,7 @@ func spark(vals []float64, width int, max float64) string {
 // binary (1024) here, which is exact for the memory column the aggregate sums
 // and close enough for the SI columns (they aren't aggregated).
 var byteUnits = map[string]float64{
-	"b": 1,
+	"b":  1,
 	"kb": 1 << 10, "kib": 1 << 10,
 	"mb": 1 << 20, "mib": 1 << 20,
 	"gb": 1 << 30, "gib": 1 << 30,
