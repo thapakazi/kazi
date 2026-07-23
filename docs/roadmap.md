@@ -67,8 +67,19 @@ One engine, three skins: CLI (humans + agents), TUI (humans), MCP server (agents
 - **M1 — proxy & SSL (day-one scope):** `kaji-proxy` Caddy system stack, generated-Caddyfile routing, `<stack>.localhost` hostnames, `kaji trust`, `kaji urls`, stable port assignment for TCP services. *Done when: 10 stacks up, every HTTP one reachable by name over HTTPS, no ports memorized.*
 - **M2 — catalog & lifecycle:** `kaji try <template> [--keep]`, `kaji run <image>` (plain, no compose), `kaji adopt`, `kaji gc`, `kaji eject <template> [dir]`, template seeding from awesome-compose. *Done when: `kaji try postgres` leaves zero residue after exit.*
 - **M3 — config, MCP & integration:** `kaji config get/set`, per-stack `kaji.yaml` overrides (env, ports, profiles), `kaji doctor`, `kaji mcp` stdio server for Claude Code, generated lazydocker `customCommands` snippet. *Done when: excalidraw + its MCP run as one customized catalog stack, and Claude Code can up/down/inspect stacks via kaji's MCP tools.*
-- **M4 — server mode (opt-in):** same binary on a home server/VPS — Caddy flips to ACME certs on real hostnames, backup hooks (ONCE-style pre/post), background service.
+- **M4 — server mode (opt-in):** same binary on a home server/VPS — Caddy flips to ACME certs on real hostnames, background service. *(Backup hooks, originally slated here, were pulled forward as a local-first feature — see M8.)*
 - **M5 — TUI:** bubbletea dashboard over the engine (stacks panel, catalog panel, logs). Only after CLI proves the model.
+
+> **Note:** the roadmap above is the original plan and uses the old **kaji** spelling throughout; the decided name is **kazi** (see the M0 spec). The design specs supersede this doc where they diverge, and are the source of truth for scope. M4 remains unspecced; M5 is implemented.
+
+## Post-roadmap iterations (M6–M9)
+
+Milestones added after the original plan, each a dated design spec under `docs/superpowers/specs/`. All are local-first, engine-backed, and hold the "one engine, thin skins" contract — nothing lives only in a skin.
+
+- **M6 — interactive create & edit** ([spec](superpowers/specs/2026-07-18-kazi-m6-design.md)): TUI `n:new` form over `kazi add`; new `kazi edit <stack>` (manifest, `--compose`) with validate-on-save; richer TUI `try` (values form + one-key `k:keep`/`g:gc`). *Done when: register a stack, edit its config in `$EDITOR`, and launch a configured ephemeral `try` — all from the keyboard.*
+- **M7 — stats** ([spec](superpowers/specs/2026-07-20-kazi-m7-design.md)): per-service **Stats** tab (CPU/mem sparklines, net/block I/O, PIDs) + host CPU/Mem/Disk on the `ALL` overview; `kazi stats [stack] [--host] [--json]`. Container stats from `<runtime> stats` (never the socket), host from a portable read. *Done when: live per-service and host resource graphs in the TUI, plus an agent-safe `kazi stats --json` snapshot.*
+- **M8 — backup & restore** ([spec](superpowers/specs/2026-07-20-kazi-m8-design.md)): hybrid — volume snapshot as the universal default (cold/quiesced), opt-in per-service **logical** dumps (`pg_dump` etc.); `kazi backup/restore/backups`, `kind: Backup` records, in-place restore with an auto safety backup + `--as <new>` clone. *Done when: an excalidraw volume and a Postgres logical dump both back up and restore, zero config for the volume path.*
+- **M9 — exec / shell-into-container** ([spec](superpowers/specs/2026-07-20-kazi-m9-design.md)): `kazi exec <stack> <service>` interactive login shell (lazydocker-style probe), captured `-- <cmd>` for scripts, MCP `exec` tool (bounded, `destructiveHint`); TUI `s:shell` suspend/return. `exec` only — no `attach`. *Done when: an interactive shell into any running service and a captured one-off command, reachable from CLI, TUI, and MCP.*
 
 ## First concrete steps (M0, ~in order)
 
