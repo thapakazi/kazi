@@ -89,7 +89,7 @@ func TestStatsTabStream(t *testing.T) {
 	waitForContains(t, tm, "blog")
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // blog
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")}) // focus detail
-	for range 5 { // Services → … → Stats
+	for range 5 {                                               // Services → … → Stats
 		tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
 	}
 	waitForContains(t, tm, "Stats", "web", "PIDs 14", "db", "PIDs 20")

@@ -72,8 +72,8 @@ func TestRunningShellTargets(t *testing.T) {
 	st := engine.StackInfo{Containers: []engine.ContainerInfo{
 		{Name: "blog-web-1", Service: "web", State: "running"},
 		{Name: "blog-web-2", Service: "web", State: "running"}, // dedup by service
-		{Name: "blog-db-1", Service: "db", State: "exited"},     // skip stopped
-		{Name: "adopted", Service: "", State: "running"},        // fall back to name
+		{Name: "blog-db-1", Service: "db", State: "exited"},    // skip stopped
+		{Name: "adopted", Service: "", State: "running"},       // fall back to name
 	}}
 	got := runningShellTargets(st)
 	want := []string{"web", "adopted"}
@@ -102,9 +102,9 @@ func TestShellPickerRendersAsList(t *testing.T) {
 
 // recordShell substitutes the suspend with a recorder for the test's duration.
 func recordShell(t *testing.T) *struct {
-	called          bool
-	stack, service  string
-	pause           bool
+	called         bool
+	stack, service string
+	pause          bool
 } {
 	t.Helper()
 	rec := &struct {
