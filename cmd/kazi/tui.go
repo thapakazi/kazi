@@ -35,7 +35,9 @@ var tuiCmd = &cobra.Command{
 		eng.Out = io.Discard
 		eng.Err = io.Discard
 		refresh := resolveRefresh(eng.Cfg.Spec.TUI.RefreshInterval, tuiRefresh)
-		model := tui.New(eng, refresh, tui.WithStatsHistory(eng.Cfg.Spec.TUI.StatsHistory))
+		model := tui.New(eng, refresh,
+			tui.WithStatsHistory(eng.Cfg.Spec.TUI.StatsHistory),
+			tui.WithReturnImmediately(eng.Cfg.Spec.TUI.ReturnImmediately))
 		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 		_, err = p.Run()
 		return err

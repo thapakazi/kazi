@@ -433,7 +433,7 @@ func TestStackMenuSystemStack(t *testing.T) {
 	}
 	// A normal running registered stack still gets open/route/delete.
 	norm := menuTokens(stackMenuItems(true, true, false))
-	if !eq(norm, []string{"restart", "down", "open", "route", "logs", "urls", "config", "delete"}) {
+	if !eq(norm, []string{"restart", "down", "shell", "open", "route", "logs", "urls", "config", "delete"}) {
 		t.Fatalf("normal stack menu = %v", norm)
 	}
 }

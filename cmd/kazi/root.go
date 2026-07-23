@@ -80,12 +80,17 @@ func printResult(action, stack string) error {
 }
 
 func exitCode(err error) int {
+	var ee *exitError
 	switch {
 	case err == nil:
 		return 0
+	case errors.As(err, &ee):
+		return ee.code
 	case errors.Is(err, ErrUsage):
 		return 2
-	case errors.Is(err, engine.ErrStackNotFound):
+	case errors.Is(err, engine.ErrStackNotFound),
+		errors.Is(err, engine.ErrServiceNotFound),
+		errors.Is(err, engine.ErrServiceNotRunning):
 		return 3
 	case errors.Is(err, runtime.ErrNoRuntime):
 		return 4
@@ -100,6 +105,10 @@ func errCode(err error) string {
 		return "usage"
 	case errors.Is(err, engine.ErrStackNotFound):
 		return "stack_not_found"
+	case errors.Is(err, engine.ErrServiceNotFound):
+		return "service_not_found"
+	case errors.Is(err, engine.ErrServiceNotRunning):
+		return "service_not_running"
 	case errors.Is(err, runtime.ErrNoRuntime):
 		return "no_runtime"
 	case errors.Is(err, template.ErrAborted):
@@ -120,6 +129,12 @@ func Execute() int {
 	err := rootCmd.Execute()
 	if err == nil {
 		return 0
+	}
+	// exec passthrough: the container command's stdout/stderr already went out
+	// and its exit code is carried verbatim — no "kazi:" prefix, no JSON error.
+	var ee *exitError
+	if errors.As(err, &ee) {
+		return ee.code
 	}
 	if jsonOut {
 		var je jsonError

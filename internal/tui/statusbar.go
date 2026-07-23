@@ -77,13 +77,15 @@ func (m Model) renderModal() string {
 		b.WriteString("\n" + m.st.keybarKey.Render("esc") + " cancel")
 		return m.st.modalBox.Render(b.String())
 	}
-	if m.modal.mkind == modalPicker || m.modal.mkind == modalMenu || m.modal.mkind == modalEditOpen || m.modal.mkind == modalLogService || m.modal.mkind == modalEnvService || m.modal.mkind == modalStatsService {
+	if m.modal.mkind == modalPicker || m.modal.mkind == modalMenu || m.modal.mkind == modalEditOpen || m.modal.mkind == modalLogService || m.modal.mkind == modalEnvService || m.modal.mkind == modalStatsService || m.modal.mkind == modalShellChoose {
 		verb := "open"
 		switch m.modal.mkind {
 		case modalMenu:
 			verb = "run"
 		case modalLogService, modalEnvService, modalStatsService:
 			verb = "filter"
+		case modalShellChoose:
+			verb = "shell"
 		}
 		var b strings.Builder
 		b.WriteString(m.modal.prompt + "\n\n")

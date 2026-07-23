@@ -6,6 +6,7 @@ package tui
 import (
 	"context"
 	"io"
+	"os/exec"
 
 	"github.com/thapakazi/kazi/internal/engine"
 	"github.com/thapakazi/kazi/internal/store"
@@ -96,6 +97,11 @@ type Engine interface {
 	// externally-run stack's ports as *.localhost URLs).
 	RoutesFromStack(ctx context.Context, stack string) ([]engine.RouteCandidate, error)
 	RouteAdd(ctx context.Context, host string, port int, note, stack string) error
+
+	// ExecCommand builds the interactive shell command for a service container
+	// (s-menu → shell). The engine resolves the container and constructs the
+	// command with no stdio wired; the TUI runs it via tea.ExecProcess.
+	ExecCommand(ctx context.Context, stack, service string, argv []string, opts engine.ExecOpts) (*exec.Cmd, error)
 }
 
 // Compile-time assertion that the real engine satisfies the TUI seam.

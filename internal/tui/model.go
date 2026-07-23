@@ -66,6 +66,7 @@ const (
 	modalLogService             // transient Logs container filter picker (c)
 	modalEnvService             // transient Env container filter picker (c)
 	modalStatsService           // transient Stats container filter picker (c)
+	modalShellChoose            // transient shell service picker (s-menu → shell)
 )
 
 // modalState is the active modal. active==false means none is open; while one
@@ -186,6 +187,10 @@ type Model struct {
 	statsHistory    int // sparkline ring size (spec.tui.statsHistory, default 60)
 	statsFullscreen bool
 
+	// returnImmediately skips the post-shell "press enter to return" pause after
+	// an s-menu → shell session (spec.tui.returnImmediately).
+	returnImmediately bool
+
 	// Host overview (ALL): host CPU/Mem/Disk graphs + an aggregate container-usage
 	// line, polled on the normal tick while ALL is selected (hostInFlight guards
 	// against overlapping polls, since the aggregate blocks ~1s on a stats delta).
@@ -259,6 +264,11 @@ func WithStatsHistory(n int) Option {
 			m.statsHistory = n
 		}
 	}
+}
+
+// WithReturnImmediately skips the post-shell return pause (spec.tui.returnImmediately).
+func WithReturnImmediately(v bool) Option {
+	return func(m *Model) { m.returnImmediately = v }
 }
 
 // New builds a dashboard model over the given engine with the given refresh

@@ -93,12 +93,19 @@ type ConfigSpec struct {
 	Ports   PortsConfig   `yaml:"ports,omitempty"`   // ephemeral port range
 	Cleanup CleanupConfig `yaml:"cleanup,omitempty"` // gc policy
 	TUI     TUIConfig     `yaml:"tui,omitempty"`     // dashboard settings
+	Exec    ExecConfig    `yaml:"exec,omitempty"`    // shell-into-container settings (M9)
+}
+
+// ExecConfig controls `kazi exec`. Shell empty ⇒ the login-shell probe.
+type ExecConfig struct {
+	Shell string `yaml:"shell,omitempty"` // override the login-shell probe (e.g. /bin/zsh)
 }
 
 // TUIConfig controls the TUI dashboard. All fields optional.
 type TUIConfig struct {
-	RefreshInterval string `yaml:"refreshInterval,omitempty"` // duration string, default "2s"
-	StatsHistory    int    `yaml:"statsHistory,omitempty"`    // Stats-tab sparkline ring size, default 60
+	RefreshInterval   string `yaml:"refreshInterval,omitempty"`   // duration string, default "2s"
+	StatsHistory      int    `yaml:"statsHistory,omitempty"`      // Stats-tab sparkline ring size, default 60
+	ReturnImmediately bool   `yaml:"returnImmediately,omitempty"` // skip the post-shell "press enter" pause (M9)
 }
 
 // ProxyConfig lists which well-known ports the proxy should forward.
