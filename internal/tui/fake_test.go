@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 
 	"github.com/thapakazi/kazi/internal/engine"
@@ -149,6 +150,9 @@ func (fakeEngine) HostStats(context.Context) (engine.HostStats, error) {
 		MemUsed: 12 << 30, MemTotal: 36 << 30, DiskUsed: 884 << 30, DiskTotal: 994 << 30}, nil
 }
 
+func (fakeEngine) ExecCommand(_ context.Context, _, _ string, _ []string, _ engine.ExecOpts) (*exec.Cmd, error) {
+	return exec.Command("true"), nil
+}
 func (fakeEngine) Remove(string) error                           { return nil }
 func (fakeEngine) RemoveContainer(context.Context, string) error { return nil }
 func (fakeEngine) Adopt(context.Context, string, []string) error { return nil }

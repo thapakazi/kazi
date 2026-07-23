@@ -294,6 +294,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.setToast("opened " + msg.path + " in editor")
 
+	case shellTargetsMsg:
+		// s-menu → shell resolved its running services: 0 ⇒ toast, 1 ⇒ straight
+		// in, many ⇒ the transient service picker.
+		if msg.err != nil {
+			return m, m.setToast("shell: " + msg.err.Error())
+		}
+		switch len(msg.services) {
+		case 0:
+			return m, m.setToast("no running service to shell into for " + msg.stack)
+		case 1:
+			return m, m.shellInto(msg.stack, msg.services[0])
+		default:
+			opts := make([]string, len(msg.services))
+			vals := make([]string, len(msg.services))
+			for i, s := range msg.services {
+				opts[i], vals[i] = s, s
+			}
+			m.modal = modalState{active: true, mkind: modalShellChoose, stack: msg.stack,
+				prompt: "› " + msg.stack + " — shell", options: opts, values: vals}
+			return m, nil
+		}
+
+	case shellExitedMsg:
+		// Back from a suspended shell (the return pause already happened in-terminal).
+		if msg.err != nil {
+			return m, m.setToast("shell: " + msg.err.Error())
+		}
+		// Containers may have changed; refresh the frame on the next tick.
+		return m, tea.Batch(snapshotCmd(m.eng), statusbarCmd(m.eng))
+
 	case openResolvedMsg:
 		switch len(msg.choices) {
 		case 0:

@@ -286,6 +286,44 @@ func TestM0ManifestNewKeysBanned(t *testing.T) {
 	}
 }
 
+// M9: spec.exec.shell and spec.tui.returnImmediately are additive config keys.
+// Absent ⇒ zero values (empty shell ⇒ login-shell probe; returnImmediately false);
+// a file that sets them round-trips.
+func TestExecConfigRoundTrip(t *testing.T) {
+	// Absent config file ⇒ zero values, no defaults injected.
+	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Spec.Exec.Shell != "" {
+		t.Errorf("absent config: exec.shell = %q, want empty", cfg.Spec.Exec.Shell)
+	}
+	if cfg.Spec.TUI.ReturnImmediately {
+		t.Errorf("absent config: tui.returnImmediately = true, want false")
+	}
+
+	// File that sets both ⇒ round-trips.
+	dir := t.TempDir()
+	t.Setenv("KAZI_CONFIG_DIR", dir)
+	yaml := "apiVersion: kazi.dev/v1alpha1\nkind: Config\nspec:\n" +
+		"  exec:\n    shell: /bin/zsh\n" +
+		"  tui:\n    returnImmediately: true\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg2, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.Spec.Exec.Shell != "/bin/zsh" {
+		t.Errorf("exec.shell = %q, want /bin/zsh", cfg2.Spec.Exec.Shell)
+	}
+	if !cfg2.Spec.TUI.ReturnImmediately {
+		t.Errorf("tui.returnImmediately = false, want true")
+	}
+}
+
 func TestCleanupTTLDefault(t *testing.T) {
 	// Absent config file => EphemeralTTL seeded to "24h".
 	t.Setenv("KAZI_CONFIG_DIR", t.TempDir())

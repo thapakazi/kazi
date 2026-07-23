@@ -154,6 +154,7 @@ func stackMenuItems(running, registered, system bool) []menuItem {
 		)
 		if !system {
 			items = append(items,
+				menuItem{"shell", "open a shell in a container"},
 				menuItem{"open", "open URL in the browser"},
 				menuItem{"route", "route published ports as *.localhost URLs"},
 			)
@@ -215,6 +216,9 @@ func (m Model) menuChoose(i int) (tea.Model, tea.Cmd) {
 		return m.gotoTab(tabConfig)
 	case "route":
 		return m, routeFromCmd(m.eng, stack)
+	case "shell":
+		// Resolve running services async; one ⇒ straight in, many ⇒ picker.
+		return m, shellTargetsCmd(m.eng, stack)
 	}
 	return m, nil
 }
@@ -247,6 +251,8 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleListKey(msg, m.envServiceChoose)
 	case modalStatsService:
 		return m.handleListKey(msg, m.statsServiceChoose)
+	case modalShellChoose:
+		return m.handleListKey(msg, m.shellChoose)
 	case modalSourceChoose:
 		return m.handleSourceChoose(msg)
 	case modalRemoveChoose:

@@ -202,3 +202,17 @@ type editorOpenedMsg struct {
 	path string
 	err  error
 }
+
+// shellTargetsMsg carries the running services a stack offers for s-menu → shell:
+// zero ⇒ toast, one ⇒ straight in, many ⇒ the shell service picker.
+type shellTargetsMsg struct {
+	stack    string
+	services []string
+	err      error
+}
+
+// shellExitedMsg reports an interactive shell session (tea.ExecProcess) ended.
+type shellExitedMsg struct {
+	stack, service string
+	err            error
+}
